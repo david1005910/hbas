@@ -19,7 +19,7 @@ export function Sidebar() {
             <span className="font-display text-gold text-sm leading-tight">
               Hebrew Bible<br />Animation Studio
             </span>
-            <p className="text-parchment/40 font-body mt-0.5" style={{ fontSize: "0.65rem" }}>
+            <p className="text-parchment/50 font-body mt-1" style={{ fontSize: "0.78rem", letterSpacing: "0.02em" }}>
               by David HS Kim
             </p>
           </div>
