@@ -105,12 +105,14 @@ model SceneVideoClip {
   episodeId   String
   episode     Episode         @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   sceneNumber Int
-  veoJobId    String?         @db.VarChar(200)
+  veoJobId    String?         @db.VarChar(500)
   status      VideoClipStatus @default(PENDING)
   clipUrl     String?         @db.VarChar(500)
+  clipGcsUri  String?         @db.VarChar(1000)  // Veo 3.1 GCS URI (연장에 사용)
+  extendCount Int             @default(0)         // 연장 횟수
   subClipUrl  String?         @db.VarChar(500)   // 자막 삽입된 클립
   narrClipUrl String?         @db.VarChar(500)   // 나레이션 합성된 클립
-  durationSec Int             @default(4)
+  durationSec Int             @default(8)
   createdAt   DateTime        @default(now())
 
   @@map("scene_video_clips")

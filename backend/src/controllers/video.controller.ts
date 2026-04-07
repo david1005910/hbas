@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import * as fs from "fs";
 import * as path from "path";
-import { startVideoGeneration as veoStart, pollVideoStatus, downloadVideoFromGcs } from "../services/veo.service";
+import { startVideoGeneration as veoStart, extendVideo as veoExtend, pollVideoStatus, downloadVideoFromGcs } from "../services/veo.service";
 import {
   mergeVideoClips,
   mergeVideoWithNarration,
@@ -13,6 +13,7 @@ import {
 import { getFinalEpisodePath, saveVideo } from "../utils/imageStorage";
 import { buildSceneSrt } from "../utils/srtParser";
 import { prisma } from "../config/database";
+import { GCS_OUTPUT_BUCKET, TARGET_SCENE_DURATION } from "../config/vertexai";
 
 export async function startVideoGeneration(req: Request, res: Response, next: NextFunction) {
   try {
@@ -48,6 +49,16 @@ export async function startVideoGeneration(req: Request, res: Response, next: Ne
   } catch (err) { next(err); }
 }
 
+/**
+ * 씬 클립 상태 폴링 + Veo 3.1 자동 연장 체인
+ *
+ * 연장 조건: GCS_OUTPUT_BUCKET 설정 AND 현재 durationSec < TARGET_SCENE_DURATION
+ *   - 초기 클립 완료(8s) → 연장1 시작 → 15s
+ *   - 연장1 완료         → 연장2 시작 → 22s  ← TARGET_SCENE_DURATION 기본값
+ *   - 연장2 완료         → COMPLETED 확정
+ *
+ * GCS_OUTPUT_BUCKET 없으면 Veo 2.0 모드: 8초 클립에서 바로 COMPLETED
+ */
 export async function getVideoStatus(req: Request, res: Response, next: NextFunction) {
   try {
     const clip = await prisma.sceneVideoClip.findUnique({ where: { id: req.params.id } });
@@ -56,35 +67,87 @@ export async function getVideoStatus(req: Request, res: Response, next: NextFunc
     if (clip.status === "COMPLETED" || clip.status === "FAILED") {
       return res.json(clip);
     }
-
     if (!clip.veoJobId) return res.json(clip);
 
     const result = await pollVideoStatus(clip.veoJobId);
 
-    if (result.status === "completed") {
-      let filePath: string;
-      if (result.videoBase64) {
-        // inline base64 응답 (Veo 2.0)
-        filePath = saveVideo(clip.episodeId, clip.sceneNumber, Buffer.from(result.videoBase64, "base64"));
-      } else if (result.videoGcsUri) {
-        // GCS URI 응답 (Veo 3+)
-        filePath = await downloadVideoFromGcs(result.videoGcsUri, clip.episodeId, clip.sceneNumber);
-      } else {
-        console.warn(`[Veo] completed but no video data`);
-        return res.json(clip);
-      }
-      const updated = await prisma.sceneVideoClip.update({
-        where: { id: clip.id },
-        data: { status: "COMPLETED", clipUrl: filePath.replace("/app", "") },
-      });
-      return res.json(updated);
-    }
+    // ── 아직 처리 중 ──────────────────────────────────────────────
+    if (result.status === "processing") return res.json(clip);
 
+    // ── 실패 ─────────────────────────────────────────────────────
     if (result.status === "failed") {
       const updated = await prisma.sceneVideoClip.update({
         where: { id: clip.id },
         data: { status: "FAILED" },
       });
+      return res.json(updated);
+    }
+
+    // ── 완료: 파일 다운로드 또는 GCS URI 보존 ────────────────────
+    if (result.status === "completed") {
+      let filePath: string | null = null;
+      let newGcsUri: string | null = result.videoGcsUri ?? null;
+
+      if (result.videoBase64) {
+        // Veo 2.0 inline base64 → 즉시 저장
+        filePath = saveVideo(clip.episodeId, clip.sceneNumber, Buffer.from(result.videoBase64, "base64"));
+      } else if (result.videoGcsUri) {
+        // Veo 3.1 GCS URI: 연장이 끝날 때 다운로드
+        newGcsUri = result.videoGcsUri;
+      } else {
+        console.warn(`[Veo] 완료됐지만 영상 없음 → FAILED`);
+        const updated = await prisma.sceneVideoClip.update({
+          where: { id: clip.id },
+          data: { status: "FAILED" },
+        });
+        return res.json(updated);
+      }
+
+      // ── 연장 필요 여부 판단 ──────────────────────────────────────
+      // 초기 8초 + 7초 × extendCount = 현재 누적 길이
+      const currentDuration = 8 + (clip.extendCount ?? 0) * 7;
+      const canExtend = GCS_OUTPUT_BUCKET && newGcsUri && currentDuration < TARGET_SCENE_DURATION;
+
+      if (canExtend) {
+        // 키프레임의 모션 프롬프트 재사용
+        const keyframe = await prisma.sceneKeyframe.findUnique({ where: { id: clip.keyframeId } });
+        const extPrompt = keyframe?.promptUsed?.split("\n")[0] ?? "Slow cinematic pan, gentle ambient motion";
+        const extendedDur = currentDuration + 7;
+        const newExtendCount = (clip.extendCount ?? 0) + 1;
+
+        console.log(`[Veo] 씬 ${clip.sceneNumber} 연장 ${newExtendCount}회차 시작 (${currentDuration}s → ${extendedDur}s)`);
+        const newOpName = await veoExtend(newGcsUri!, extPrompt);
+
+        const updated = await prisma.sceneVideoClip.update({
+          where: { id: clip.id },
+          data: {
+            veoJobId: newOpName,
+            clipGcsUri: newGcsUri,          // 다음 연장의 입력용 GCS URI
+            extendCount: newExtendCount,
+            durationSec: extendedDur,       // 다음 완료 시 예상 길이
+            status: "PROCESSING",
+          },
+        });
+        return res.json(updated);
+      }
+
+      // ── 최종 완료: 로컬에 다운로드 ──────────────────────────────
+      if (!filePath && newGcsUri) {
+        console.log(`[Veo] 씬 ${clip.sceneNumber} 최종 연장 완료 → 다운로드 중`);
+        filePath = await downloadVideoFromGcs(newGcsUri, clip.episodeId, clip.sceneNumber);
+      }
+
+      const finalDuration = 8 + (clip.extendCount ?? 0) * 7;
+      const updated = await prisma.sceneVideoClip.update({
+        where: { id: clip.id },
+        data: {
+          status: "COMPLETED",
+          clipUrl: filePath!.replace("/app", ""),
+          clipGcsUri: newGcsUri,
+          durationSec: finalDuration,
+        },
+      });
+      console.log(`[Veo] 씬 ${clip.sceneNumber} 완료 (총 ${finalDuration}초)`);
       return res.json(updated);
     }
 

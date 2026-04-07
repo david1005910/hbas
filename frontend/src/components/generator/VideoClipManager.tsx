@@ -17,6 +17,17 @@ const STATUS_ICON: Record<string, React.ReactNode> = {
   FAILED: <XCircle size={14} style={{ color: "#fca5a5" }} />,
 };
 
+function clipStatusLabel(clip: import("../../types").SceneVideoClip): string {
+  if (clip.status === "PROCESSING" && clip.extendCount > 0) {
+    const currentSec = 8 + clip.extendCount * 7;
+    return `연장 중 (${clip.extendCount}회 완료 · ${currentSec}s)`;
+  }
+  if (clip.status === "COMPLETED") {
+    return `완료 (${clip.durationSec}초)`;
+  }
+  return clip.status;
+}
+
 export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate }: Props) {
   const [clips, setClips] = useState<SceneVideoClip[]>(initialClips);
 
@@ -571,7 +582,7 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                               }}
                               className="font-body"
                             >
-                              {clip.status}
+                              {clipStatusLabel(clip)}
                             </span>
                             {clip.subClipUrl && (
                               <span style={{ fontSize: "0.7rem", color: "#a5b4fc", background: "rgba(99,102,241,0.2)", padding: "1px 6px", borderRadius: "8px" }}>자막</span>

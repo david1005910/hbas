@@ -78,6 +78,8 @@ export interface SceneVideoClip {
   veoJobId?: string;
   status: VideoClipStatus;
   clipUrl?: string | null;
+  clipGcsUri?: string | null;
+  extendCount: number;
   subClipUrl?: string | null;
   narrClipUrl?: string | null;
   durationSec: number;
