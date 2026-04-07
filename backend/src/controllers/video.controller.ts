@@ -169,6 +169,29 @@ export async function mergeClips(req: Request, res: Response, next: NextFunction
 }
 
 /**
+ * 영상 클립 삭제 (FAILED 또는 PENDING 상태만)
+ * DELETE /api/v1/video-clips/:id
+ */
+export async function deleteVideoClip(req: Request, res: Response, next: NextFunction) {
+  try {
+    const clip = await prisma.sceneVideoClip.findUnique({ where: { id: req.params.id } });
+    if (!clip) return res.status(404).json({ error: "Not found" });
+
+    // 관련 파일 삭제
+    const files = [clip.clipUrl, clip.subClipUrl, clip.narrClipUrl].filter(Boolean) as string[];
+    for (const f of files) {
+      const localPath = `/app${f}`;
+      if (fs.existsSync(localPath)) {
+        try { fs.unlinkSync(localPath); } catch { /* 파일 삭제 실패는 무시 */ }
+      }
+    }
+
+    await prisma.sceneVideoClip.delete({ where: { id: clip.id } });
+    res.json({ message: "클립 삭제 완료", sceneNumber: clip.sceneNumber });
+  } catch (err) { next(err); }
+}
+
+/**
  * 모든 완료된 클립에 SRT_KO 자막 삽입
  * POST /api/v1/episodes/:id/burn-subtitles
  */

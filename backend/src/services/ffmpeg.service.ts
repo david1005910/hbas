@@ -31,6 +31,9 @@ export async function embedSubtitleToClip(
       .input(clipPath)
       .input(tmpSrt)
       .outputOptions([
+        "-map 0:v:0",
+        "-map 0:a:0?",             // 오디오가 없는 Veo 클립 대응 (옵셔널)
+        "-map 1:s:0",              // 자막 스트림
         "-c:v copy",
         "-c:a copy",
         "-c:s mov_text",           // MP4 소프트 자막 코덱

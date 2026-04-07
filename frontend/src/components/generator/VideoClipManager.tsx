@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Play, RefreshCw, Film, CheckCircle, XCircle, Clock, FileText, Mic2 } from "lucide-react";
+import { Play, RefreshCw, Film, CheckCircle, XCircle, Clock, FileText, Mic2, Trash2 } from "lucide-react";
 import { videoClipsApi } from "../../api/videoClips";
 import type { SceneKeyframe, SceneVideoClip } from "../../types";
 
@@ -49,6 +49,16 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
     });
     setClips((prev) => [...prev, clip]);
     setConfirmScene(null);
+  }
+
+  async function handleDeleteClip(clipId: string) {
+    try {
+      await videoClipsApi.delete(clipId);
+      setClips((prev) => prev.filter((c) => c.id !== clipId));
+      onUpdate?.();
+    } catch (e: any) {
+      setActionMsg(`⚠️ 삭제 오류: ${e?.response?.data?.error ?? e.message}`);
+    }
   }
 
   async function handleBurnSubtitles() {
@@ -401,6 +411,25 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                         >
                           다운로드
                         </a>
+                      )}
+                      {clip && (clip.status === "FAILED" || clip.status === "PENDING") && (
+                        <button
+                          onClick={() => handleDeleteClip(clip.id)}
+                          style={{
+                            display: "flex", alignItems: "center", gap: "4px",
+                            padding: "5px 12px", borderRadius: "14px",
+                            background: "rgba(239,68,68,0.2)",
+                            border: "1px solid rgba(239,68,68,0.4)",
+                            color: "#fca5a5", fontSize: "0.75rem",
+                            cursor: "pointer",
+                            transition: "all 0.2s ease",
+                          }}
+                          className="font-body"
+                          title="클립 삭제"
+                        >
+                          <Trash2 size={12} />
+                          삭제
+                        </button>
                       )}
                       {!clip && confirmScene !== kf.sceneNumber && (
                         <button

@@ -14,4 +14,6 @@ export const videoClipsApi = {
     api.post(`/episodes/${episodeId}/burn-subtitles`).then((r) => r.data),
   addNarration: (episodeId: string) =>
     api.post(`/episodes/${episodeId}/add-narration-to-clips`).then((r) => r.data),
+  delete: (clipId: string) =>
+    api.delete(`/video-clips/${clipId}`).then((r) => r.data),
 };
