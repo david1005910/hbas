@@ -26,6 +26,9 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
   const [isBurningSubtitles, setIsBurningSubtitles] = useState(false);
   const [isAddingNarration, setIsAddingNarration] = useState(false);
   const [actionMsg, setActionMsg] = useState("");
+  const [isProducing, setIsProducing] = useState(false);
+  const [produceLog, setProduceLog] = useState<string[]>([]);
+  const [finalOutputUrl, setFinalOutputUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const processing = clips.filter((c) => c.status === "PROCESSING");
@@ -49,6 +52,41 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
     });
     setClips((prev) => [...prev, clip]);
     setConfirmScene(null);
+  }
+
+  async function handleProduceFinal() {
+    setIsProducing(true);
+    setProduceLog([]);
+    setFinalOutputUrl(null);
+    setMergeError("");
+
+    const url = videoClipsApi.produceFinalUrl(episodeId);
+    const es = new EventSource(url);
+
+    es.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.step === "result") {
+        setFinalOutputUrl(data.outputUrl);
+        onUpdate?.();
+      } else if (data.msg) {
+        setProduceLog((prev) => [...prev, data.msg]);
+      }
+      if (data.done) {
+        es.close();
+        setIsProducing(false);
+      }
+      if (data.error && data.step === "error") {
+        setMergeError(data.msg);
+        es.close();
+        setIsProducing(false);
+      }
+    };
+
+    es.onerror = () => {
+      setMergeError("연결 오류 — 백엔드 로그를 확인하세요");
+      es.close();
+      setIsProducing(false);
+    };
   }
 
   async function handleDeleteClip(clipId: string) {
@@ -229,6 +267,75 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
               </button>
             )}
           </div>
+
+          {/* 최종 영상 생성 (자막+나레이션+BGM 통합) */}
+          {completedCount >= 1 && (
+            <div style={{
+              borderRadius: "20px", padding: "16px 18px",
+              background: "linear-gradient(135deg, rgba(16,185,129,0.2) 0%, rgba(59,130,246,0.15) 100%)",
+              border: "1px solid rgba(16,185,129,0.4)",
+            }}>
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <p style={{ color: "#6ee7b7", fontWeight: 700, fontSize: "0.9rem", margin: 0 }} className="font-body">
+                    🎬 최종 영상 생성
+                  </p>
+                  <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.75rem", marginTop: "2px" }} className="font-body">
+                    자막 삽입 → 나레이션 합성 → 병합 → BGM 자동 처리
+                  </p>
+                </div>
+                <button
+                  onClick={handleProduceFinal}
+                  disabled={isProducing}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "8px",
+                    padding: "10px 22px", borderRadius: "20px",
+                    background: isProducing
+                      ? "rgba(255,255,255,0.1)"
+                      : "linear-gradient(135deg, rgba(16,185,129,0.5) 0%, rgba(59,130,246,0.4) 100%)",
+                    border: "1px solid rgba(16,185,129,0.6)",
+                    color: "#ffffff", fontWeight: 700, fontSize: "0.875rem",
+                    cursor: isProducing ? "not-allowed" : "pointer",
+                    boxShadow: "0px 4px 16px rgba(16,185,129,0.3), inset 0px 1px 1px rgba(255,255,255,0.3)",
+                    transition: "all 0.2s ease",
+                  }}
+                  className="font-body"
+                >
+                  {isProducing
+                    ? <><RefreshCw size={14} className="animate-spin" /> 처리 중...</>
+                    : <><Film size={14} /> 최종 영상 생성</>}
+                </button>
+              </div>
+
+              {/* 진행 로그 */}
+              {produceLog.length > 0 && (
+                <div style={{
+                  marginTop: "12px", padding: "10px 12px", borderRadius: "12px",
+                  background: "rgba(0,0,0,0.25)", fontFamily: "monospace",
+                  fontSize: "0.75rem", color: "rgba(255,255,255,0.75)",
+                  maxHeight: "140px", overflowY: "auto",
+                }}>
+                  {produceLog.map((line, i) => (
+                    <div key={i}>{line}</div>
+                  ))}
+                </div>
+              )}
+
+              {/* 최종 결과 */}
+              {finalOutputUrl && (
+                <div style={{
+                  marginTop: "12px", padding: "10px 14px", borderRadius: "14px",
+                  background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.35)",
+                  color: "#6ee7b7", fontSize: "0.82rem",
+                }} className="font-body">
+                  ✅ 생성 완료 —{" "}
+                  <a href={finalOutputUrl} download style={{ color: "#f0abfc", textDecoration: "underline" }}>
+                    최종 MP4 다운로드
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Per-clip subtitle & narration action buttons */}
           {completedCount >= 1 && (

@@ -296,3 +296,147 @@ export async function addNarrationToClips(req: Request, res: Response, next: Nex
     res.json({ message: `나레이션 합성 완료: ${results.join(", ")}`, scenes: results });
   } catch (err) { next(err); }
 }
+
+/**
+ * 자막 삽입 → 나레이션 합성 → 최종 병합(+BGM)을 한 번에 실행
+ * POST /api/v1/episodes/:id/produce-final  (SSE 스트림)
+ */
+export async function produceFinal(req: Request, res: Response, next: NextFunction) {
+  // SSE 헤더
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  const send = (step: string, msg: string, done = false, error = "") => {
+    res.write(`data: ${JSON.stringify({ step, msg, done, error })}\n\n`);
+  };
+
+  try {
+    const episodeId = req.params.id;
+
+    // ── 에피소드 / 클립 조회 ──────────────────────────────────
+    const episode = await prisma.episode.findUnique({ where: { id: episodeId } });
+    if (!episode) { send("error", "Episode not found", true, "not_found"); res.end(); return; }
+
+    const clips = await prisma.sceneVideoClip.findMany({
+      where: { episodeId, status: "COMPLETED" },
+      orderBy: { sceneNumber: "asc" },
+    });
+    if (clips.length === 0) { send("error", "완료된 클립이 없습니다", true, "no_clips"); res.end(); return; }
+
+    // ── STEP 1: 자막 삽입 ────────────────────────────────────
+    send("subtitle", `📝 자막 삽입 시작 (${clips.length}개 씬)`);
+
+    const srtRecord = await prisma.generatedContent.findFirst({
+      where: { episodeId, contentType: "SRT_KO" },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const updatedClips = [...clips];
+
+    if (srtRecord) {
+      for (let i = 0; i < clips.length; i++) {
+        const clip = clips[i];
+        if (!clip.clipUrl) continue;
+        const sceneSrt = buildSceneSrt(srtRecord.content, clip.sceneNumber, clip.durationSec);
+        if (!sceneSrt) continue;
+
+        const clipLocalPath = `/app${clip.clipUrl}`;
+        const subOutputPath = path.join(path.dirname(clipLocalPath), `scene_${clip.sceneNumber}_sub.mp4`);
+
+        send("subtitle", `  씬 ${clip.sceneNumber} 자막 삽입 중...`);
+        await embedSubtitleToClip(clipLocalPath, sceneSrt, subOutputPath);
+
+        const updated = await prisma.sceneVideoClip.update({
+          where: { id: clip.id },
+          data: { subClipUrl: subOutputPath.replace("/app", "") },
+        });
+        updatedClips[i] = updated as any;
+      }
+      send("subtitle", `✅ 자막 삽입 완료`);
+    } else {
+      send("subtitle", `⚠️ SRT_KO 없음 — 자막 삽입 건너뜀`);
+    }
+
+    // ── STEP 2: 나레이션 합성 ────────────────────────────────
+    send("narration", `🎙 나레이션 합성 시작`);
+
+    const narrationLocalPath = episode.narrationUrl ? `/app${episode.narrationUrl}` : null;
+
+    if (narrationLocalPath && fs.existsSync(narrationLocalPath)) {
+      const totalDuration = getMediaDuration(narrationLocalPath);
+      const segmentDur = totalDuration / clips.length;
+      send("narration", `  나레이션 총 ${totalDuration.toFixed(1)}s → 씬당 ${segmentDur.toFixed(1)}s`);
+
+      for (let i = 0; i < clips.length; i++) {
+        const clip = updatedClips[i];
+        if (!clip.clipUrl) continue;
+
+        const baseClipPath = (clip as any).subClipUrl && fs.existsSync(`/app${(clip as any).subClipUrl}`)
+          ? `/app${(clip as any).subClipUrl}`
+          : `/app${clip.clipUrl}`;
+
+        const segmentStart = i * segmentDur;
+        const narrOutputPath = path.join(path.dirname(`/app${clip.clipUrl}`), `scene_${clip.sceneNumber}_narr.mp4`);
+
+        send("narration", `  씬 ${clip.sceneNumber} 나레이션 합성 중...`);
+        await addNarrationSegmentToClip(baseClipPath, narrationLocalPath, segmentStart, segmentDur, narrOutputPath);
+
+        await prisma.sceneVideoClip.update({
+          where: { id: clip.id },
+          data: { narrClipUrl: narrOutputPath.replace("/app", "") },
+        });
+        (updatedClips[i] as any).narrClipUrl = narrOutputPath.replace("/app", "");
+      }
+      send("narration", `✅ 나레이션 합성 완료`);
+    } else {
+      send("narration", `⚠️ 나레이션 파일 없음 — 나레이션 합성 건너뜀`);
+    }
+
+    // ── STEP 3: 최종 병합 + BGM ──────────────────────────────
+    send("merge", `🎬 최종 영상 병합 시작`);
+
+    // narrClipUrl > subClipUrl > clipUrl 순서로 최선 클립 선택
+    const freshClips = await prisma.sceneVideoClip.findMany({
+      where: { episodeId, status: "COMPLETED" },
+      orderBy: { sceneNumber: "asc" },
+    });
+
+    const clipPaths = freshClips.map((c) => {
+      if ((c as any).narrClipUrl && fs.existsSync(`/app${(c as any).narrClipUrl}`)) return `/app${(c as any).narrClipUrl}`;
+      if ((c as any).subClipUrl && fs.existsSync(`/app${(c as any).subClipUrl}`)) return `/app${(c as any).subClipUrl}`;
+      return `/app${c.clipUrl}`;
+    });
+
+    const finalPath = getFinalEpisodePath(episodeId);
+    const bgmPath = process.env.BGM_PATH || "/app/storage/bgm/gregorian.mp3";
+    const hasBgm = fs.existsSync(bgmPath);
+
+    if (hasBgm) {
+      const tempPath = finalPath.replace(".mp4", "_nobgm.mp4");
+      send("merge", `  ${clipPaths.length}개 클립 병합 중...`);
+      await mergeVideoClips(clipPaths, tempPath);
+      send("merge", `  그레고리안 성가 BGM 혼합 중...`);
+      await mixWithBackgroundMusic(tempPath, bgmPath, finalPath);
+      fs.unlinkSync(tempPath);
+    } else {
+      send("merge", `  ${clipPaths.length}개 클립 병합 중...`);
+      await mergeVideoClips(clipPaths, finalPath);
+    }
+
+    await prisma.episode.update({
+      where: { id: episodeId },
+      data: { status: "COMPLETE" },
+    });
+
+    const outputUrl = finalPath.replace("/app", "");
+    send("complete", `✅ 최종 영상 생성 완료${hasBgm ? " (BGM 포함)" : ""}`, true);
+    res.write(`data: ${JSON.stringify({ step: "result", outputUrl, hasBgm, done: true })}\n\n`);
+    res.end();
+  } catch (err: any) {
+    send("error", err.message, true, err.message);
+    res.end();
+  }
+}
