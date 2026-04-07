@@ -1,5 +1,29 @@
 import { Link, useLocation } from "react-router-dom";
-import { BookOpen, FolderOpen, LayoutDashboard, Film } from "lucide-react";
+import { BookOpen, FolderOpen, LayoutDashboard } from "lucide-react";
+
+function MenorahIcon({ size = 24, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* 중앙 기둥 */}
+      <line x1="12" y1="4" x2="12" y2="20" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+      {/* 받침대 */}
+      <line x1="9" y1="20" x2="15" y2="20" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+      <line x1="8" y1="22" x2="16" y2="22" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+      {/* 좌측 2개 가지 */}
+      <path d="M12 10 Q7 10 7 6" stroke={color} strokeWidth="1.4" strokeLinecap="round" fill="none" />
+      <path d="M12 12 Q4 12 4 6" stroke={color} strokeWidth="1.4" strokeLinecap="round" fill="none" />
+      {/* 우측 2개 가지 */}
+      <path d="M12 10 Q17 10 17 6" stroke={color} strokeWidth="1.4" strokeLinecap="round" fill="none" />
+      <path d="M12 12 Q20 12 20 6" stroke={color} strokeWidth="1.4" strokeLinecap="round" fill="none" />
+      {/* 불꽃 7개 */}
+      <circle cx="12" cy="3.5" r="1" fill={color} />
+      <circle cx="7"  cy="5"   r="1" fill={color} />
+      <circle cx="17" cy="5"   r="1" fill={color} />
+      <circle cx="4"  cy="5"   r="1" fill={color} />
+      <circle cx="20" cy="5"   r="1" fill={color} />
+    </svg>
+  );
+}
 
 const NAV = [
   { to: "/", icon: LayoutDashboard, label: "대시보드" },
@@ -14,7 +38,7 @@ export function Sidebar() {
     <aside className="w-56 min-h-screen bg-ink flex flex-col border-r border-gold/20">
       <div className="p-5 border-b border-gold/20">
         <div className="flex items-center gap-2">
-          <Film className="text-gold" size={22} />
+          <MenorahIcon size={26} color="#d4a017" />
           <div>
             <span className="font-display text-gold text-sm leading-tight">
               Hebrew Bible<br />Animation Studio
