@@ -3,6 +3,30 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
+export async function mergeVideoWithNarration(
+  videoPath: string,
+  audioPath: string,
+  outputPath: string
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(videoPath)
+      .input(audioPath)
+      .outputOptions([
+        "-c:v copy",        // 영상 재인코딩 없이 복사
+        "-c:a aac",         // 오디오 AAC 인코딩
+        "-b:a 192k",
+        "-shortest",        // 짧은 쪽에 맞춰 종료
+        "-map 0:v:0",
+        "-map 1:a:0",
+      ])
+      .output(outputPath)
+      .on("end", () => resolve())
+      .on("error", (err) => reject(err))
+      .run();
+  });
+}
+
 export async function mergeVideoClips(
   clipPaths: string[],
   outputPath: string

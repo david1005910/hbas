@@ -20,6 +20,8 @@ const STATUS_ICON: Record<string, React.ReactNode> = {
 export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate }: Props) {
   const [clips, setClips] = useState<SceneVideoClip[]>(initialClips);
   const [isMerging, setIsMerging] = useState(false);
+  const [mergeError, setMergeError] = useState("");
+  const [mergeResult, setMergeResult] = useState<string | null>(null);
   const [confirmScene, setConfirmScene] = useState<number | null>(null);
 
   useEffect(() => {
@@ -40,7 +42,7 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
     const clip = await videoClipsApi.start(keyframeId, {
       confirmed: true,
       motionPrompt,
-      durationSec: 5,
+      durationSec: 8,
     });
     setClips((prev) => [...prev, clip]);
     setConfirmScene(null);
@@ -48,9 +50,14 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
 
   async function handleMerge() {
     setIsMerging(true);
+    setMergeError("");
+    setMergeResult(null);
     try {
-      await videoClipsApi.merge(episodeId);
+      const res = await videoClipsApi.merge(episodeId);
+      setMergeResult(res.outputPath ?? "완료");
       onUpdate?.();
+    } catch (e: any) {
+      setMergeError(e?.response?.data?.error ?? e.message ?? "병합 실패");
     } finally {
       setIsMerging(false);
     }
@@ -149,7 +156,7 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                 }}
                 className="font-body"
               >
-                키프레임 → 5초 영상 변환 (승인 필요 · 고비용)
+                키프레임 → 8초 영상 변환 (승인 필요 · 고비용)
               </p>
             </div>
             {completedCount >= 2 && (
@@ -181,6 +188,28 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
               </button>
             )}
           </div>
+
+          {/* Merge result / error */}
+          {mergeError && (
+            <div style={{
+              borderRadius: "16px", padding: "10px 14px",
+              background: "rgba(239,68,68,0.2)", border: "1px solid rgba(239,68,68,0.4)",
+              color: "#fca5a5", fontSize: "0.8rem",
+              textShadow: "0px 1px 2px rgba(0,0,0,0.3)",
+            }} className="font-body">
+              ⚠️ {mergeError}
+            </div>
+          )}
+          {mergeResult && (
+            <div style={{
+              borderRadius: "16px", padding: "10px 14px",
+              background: "rgba(134,239,172,0.15)", border: "1px solid rgba(134,239,172,0.3)",
+              color: "#86efac", fontSize: "0.8rem",
+              textShadow: "0px 1px 2px rgba(0,0,0,0.3)",
+            }} className="font-body">
+              ✅ 병합 완료 — <a href={mergeResult} download style={{ color: "#f0abfc", textDecoration: "underline" }}>최종 MP4 다운로드</a>
+            </div>
+          )}
 
           {/* Empty state */}
           {selectedKeyframes.length === 0 && (

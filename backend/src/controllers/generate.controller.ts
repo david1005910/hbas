@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { streamGenerate } from "../services/gemini.service";
 import { generateSrtPack } from "../services/srt.service";
 import { generateYtMetaPack } from "../services/ytMeta.service";
+import { generateNarration } from "../services/tts.service";
 import { buildScriptPrompt, buildAnimPromptRequest } from "../utils/promptBuilder";
 import { prisma } from "../config/database";
 
@@ -115,11 +116,10 @@ export async function generateSrt(req: Request, res: Response, next: NextFunctio
       data: [
         { episodeId: episode.id, contentType: "SRT_KO", content: pack.ko, aiModel: process.env.GEMINI_MODEL },
         { episodeId: episode.id, contentType: "SRT_HE", content: pack.he, aiModel: process.env.GEMINI_MODEL },
-        { episodeId: episode.id, contentType: "SRT_EN", content: pack.en, aiModel: process.env.GEMINI_MODEL },
       ],
     });
 
-    res.json({ message: "SRT 3종 생성 완료", types: ["SRT_KO", "SRT_HE", "SRT_EN"] });
+    res.json({ message: "SRT 2종 생성 완료 (한국어·히브리어)", types: ["SRT_KO", "SRT_HE"] });
   } catch (err) { next(err); }
 }
 
@@ -146,5 +146,32 @@ export async function generateYtMeta(req: Request, res: Response, next: NextFunc
     });
 
     res.json({ message: "YT 메타데이터 생성 완료", content: result });
+  } catch (err) { next(err); }
+}
+
+export async function generateNarrationAudio(req: Request, res: Response, next: NextFunction) {
+  try {
+    const episode = await getEpisodeOrFail(req.params.id, res);
+    if (!episode) return;
+
+    const latestScript = await prisma.generatedContent.findFirst({
+      where: { episodeId: episode.id, contentType: "SCRIPT" },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!latestScript) return res.status(400).json({ error: "먼저 스크립트를 생성하세요" });
+
+    console.log(`[Narration] 나레이션 생성 시작, episodeId=${episode.id}`);
+    const filePath = await generateNarration(episode.id, latestScript.content);
+    const narrationUrl = filePath.replace("/app", "");
+
+    await prisma.episode.update({
+      where: { id: episode.id },
+      data: { narrationUrl },
+    });
+
+    res.json({
+      message: "나레이션 생성 완료 (중년 남성 · ko-KR-Neural2-C)",
+      narrationUrl,
+    });
   } catch (err) { next(err); }
 }

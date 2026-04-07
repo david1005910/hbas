@@ -7,7 +7,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
+# Prisma 클라이언트 생성 (스키마 변경 시 자동 반영)
 RUN npx prisma generate
 
 EXPOSE 4000
-CMD ["npm", "run", "dev"]
+# 시작 시 Prisma 클라이언트 재생성 보장
+CMD ["sh", "-c", "npx prisma generate && npm run dev"]

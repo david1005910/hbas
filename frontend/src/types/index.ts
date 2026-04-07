@@ -19,6 +19,7 @@ export interface BibleBook {
 export type EpisodeStatus = "DRAFT" | "IN_PROGRESS" | "COMPLETE";
 export type AnimStyle =
   | "Epic 3D Cinematic"
+  | "Pixar 3D Animation"
   | "Hand-painted Watercolor 3D"
   | "Ancient Fresco Style"
   | "Dark Fantasy 3D"
@@ -36,6 +37,7 @@ export interface Episode {
   animStyle?: AnimStyle;
   targetDuration: number;
   status: EpisodeStatus;
+  narrationUrl?: string | null;
   createdAt: string;
   contents?: GeneratedContent[];
   keyframes?: SceneKeyframe[];

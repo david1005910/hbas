@@ -44,6 +44,7 @@ model Episode {
   animStyle      String?            @db.VarChar(100)
   targetDuration Int                @default(300)
   status         EpisodeStatus      @default(DRAFT)
+  narrationUrl   String?            @db.VarChar(500)
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
   contents       GeneratedContent[]

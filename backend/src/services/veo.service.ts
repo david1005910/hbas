@@ -8,7 +8,7 @@ const BASE_URL = `https://${GCP_LOCATION}-aiplatform.googleapis.com/v1`;
 export async function startVideoGeneration(
   imageBuffer: Buffer,
   motionPrompt: string,
-  durationSec: 5 | 6 | 7 | 8 = 5
+  durationSec: 5 | 6 | 7 | 8 = 8
 ): Promise<string> {
   const token = await getGcpAccessToken();
   const url = `${BASE_URL}/projects/${GCP_PROJECT}/locations/${GCP_LOCATION}/publishers/google/models/${VEO_MODEL}:predictLongRunning`;

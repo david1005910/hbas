@@ -10,9 +10,10 @@ interface EpisodeCtx {
 export async function generateSrtPack(
   ep: EpisodeCtx,
   script: string
-): Promise<{ ko: string; he: string; en: string }> {
+): Promise<{ ko: string; he: string }> {
   const prompt = `
 다음 대본을 바탕으로 ${ep.sceneCount}개 씬의 자막 텍스트를 JSON으로 생성해주세요.
+자막은 한국어와 히브리어 2종만 생성합니다.
 
 대본:
 ${script}
@@ -20,8 +21,7 @@ ${script}
 반드시 다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
 {
   "ko": ["씬1 한국어 자막", "씬2 한국어 자막"],
-  "he": ["씬1 히브리어 자막", "씬2 히브리어 자막"],
-  "en": ["Scene 1 English subtitle", "Scene 2 English subtitle"]
+  "he": ["씬1 히브리어 자막", "씬2 히브리어 자막"]
 }
 `;
 
@@ -29,7 +29,7 @@ ${script}
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("SRT 생성 실패: JSON 파싱 불가");
 
-  const parsed = JSON.parse(jsonMatch[0]) as { ko: string[]; he: string[]; en: string[] };
+  const parsed = JSON.parse(jsonMatch[0]) as { ko: string[]; he: string[] };
   const timings = distributeTiming(ep.sceneCount, ep.targetDuration);
 
   const makeSrt = (lines: string[], isHebrew = false) =>
@@ -46,6 +46,5 @@ ${script}
   return {
     ko: makeSrt(parsed.ko.slice(0, ep.sceneCount)),
     he: addUtf8Bom(makeSrt(parsed.he.slice(0, ep.sceneCount), true)),
-    en: makeSrt(parsed.en.slice(0, ep.sceneCount)),
   };
 }

@@ -74,6 +74,8 @@ export function streamGenerate(
 export const generateApi = {
   srt: (episodeId: string) =>
     api.post(`/episodes/${episodeId}/generate/srt`).then((r) => r.data),
+  narration: (episodeId: string) =>
+    api.post(`/episodes/${episodeId}/generate/narration`).then((r) => r.data),
   ytMeta: (episodeId: string) =>
     api.post(`/episodes/${episodeId}/generate/yt-meta`).then((r) => r.data),
 };

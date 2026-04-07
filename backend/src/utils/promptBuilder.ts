@@ -91,6 +91,8 @@ export function buildYtMetaPrompt(ep: EpisodeCtx): string {
 const STYLE_MAP: Record<string, string> = {
   "Epic 3D Cinematic":
     "photorealistic 3D render, cinematic VFX quality, IMAX wide shot, dramatic directional lighting, ancient Levant setting, golden hour atmosphere",
+  "Pixar 3D Animation":
+    "Pixar-style 3D animation, vibrant expressive character design, warm inviting color palette, subsurface scattering skin shader, soft global illumination, family-friendly cinematic composition, high detail Studio Pixar quality render",
   "Hand-painted Watercolor 3D":
     "3D animation with watercolor texture overlay, soft translucent brush strokes, warm earth tones, impressionistic biblical illustration style",
   "Ancient Fresco Style":

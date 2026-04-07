@@ -9,16 +9,18 @@ import { AnimPromptGenerator } from "../components/generator/AnimPromptGenerator
 import { KeyframeGallery } from "../components/generator/KeyframeGallery";
 import { VideoClipManager } from "../components/generator/VideoClipManager";
 import { SrtGenerator } from "../components/generator/SrtGenerator";
+import { NarrationGenerator } from "../components/generator/NarrationGenerator";
 import { YtMetaGenerator } from "../components/generator/YtMetaGenerator";
 import { episodesApi } from "../api/episodes";
 
-type Tab = "script" | "prompt" | "keyframes" | "video" | "srt" | "meta";
+type Tab = "script" | "prompt" | "keyframes" | "video" | "narration" | "srt" | "meta";
 
 const TABS: { key: Tab; label: string; emoji: string }[] = [
   { key: "script", label: "스크립트", emoji: "📜" },
   { key: "prompt", label: "프롬프트", emoji: "✍️" },
   { key: "keyframes", label: "키프레임", emoji: "🖼" },
   { key: "video", label: "영상 클립", emoji: "🎬" },
+  { key: "narration", label: "나레이션", emoji: "🎙" },
   { key: "srt", label: "자막 SRT", emoji: "💬" },
   { key: "meta", label: "YT 메타", emoji: "📊" },
 ];
@@ -45,7 +47,7 @@ export function EpisodeDetail() {
     episode.contents?.find((c) => c.contentType === type);
 
   const getSrtContents = () =>
-    episode.contents?.filter((c) => ["SRT_KO", "SRT_HE", "SRT_EN"].includes(c.contentType)) ?? [];
+    episode.contents?.filter((c) => ["SRT_KO", "SRT_HE"].includes(c.contentType)) ?? [];
 
   return (
     <PageWrapper
@@ -113,6 +115,13 @@ export function EpisodeDetail() {
             keyframes={episode.keyframes ?? []}
             initialClips={episode.videoClips ?? []}
             onUpdate={refresh}
+          />
+        )}
+        {activeTab === "narration" && (
+          <NarrationGenerator
+            episodeId={id!}
+            initialNarrationUrl={(episode as any).narrationUrl}
+            onDone={refresh}
           />
         )}
         {activeTab === "srt" && (

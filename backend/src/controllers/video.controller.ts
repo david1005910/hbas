@@ -1,8 +1,10 @@
 import { Request, Response, NextFunction } from "express";
 import * as fs from "fs";
 import { startVideoGeneration as veoStart, pollVideoStatus, downloadVideoFromGcs } from "../services/veo.service";
-import { mergeVideoClips } from "../services/ffmpeg.service";
+import { mergeVideoClips, mergeVideoWithNarration } from "../services/ffmpeg.service";
 import { getFinalEpisodePath, saveVideo } from "../utils/imageStorage";
+import * as fs from "fs";
+import * as path from "path";
 import { prisma } from "../config/database";
 
 export async function startVideoGeneration(req: Request, res: Response, next: NextFunction) {
@@ -18,7 +20,7 @@ export async function startVideoGeneration(req: Request, res: Response, next: Ne
     if (!keyframe) return res.status(404).json({ error: "Keyframe not found" });
     if (!keyframe.imageUrl) return res.status(400).json({ error: "Keyframe image not available" });
 
-    const { motionPrompt, durationSec = 5 } = req.body;
+    const { motionPrompt, durationSec = 8 } = req.body;
     const imageBuffer = fs.readFileSync(`/app${keyframe.imageUrl}`);
 
     console.log(`[Veo] start, episodeId=${keyframe.episodeId}, scene=${keyframe.sceneNumber}, model=${process.env.VEO_MODEL}`);
@@ -95,6 +97,9 @@ export async function listVideoClips(req: Request, res: Response, next: NextFunc
 
 export async function mergeClips(req: Request, res: Response, next: NextFunction) {
   try {
+    const episode = await prisma.episode.findUnique({ where: { id: req.params.id } });
+    if (!episode) return res.status(404).json({ error: "Not found" });
+
     const clips = await prisma.sceneVideoClip.findMany({
       where: { episodeId: req.params.id, status: "COMPLETED" },
       orderBy: { sceneNumber: "asc" },
@@ -103,15 +108,33 @@ export async function mergeClips(req: Request, res: Response, next: NextFunction
     if (clips.length === 0) return res.status(400).json({ error: "완료된 클립이 없습니다" });
 
     const clipPaths = clips.map((c) => `/app${c.clipUrl}`);
-    const outputPath = getFinalEpisodePath(req.params.id);
+    const finalPath = getFinalEpisodePath(req.params.id);
 
-    await mergeVideoClips(clipPaths, outputPath);
+    // 나레이션 오디오 존재 시 → 임시 파일로 먼저 병합 후 오디오 합성
+    const narrationLocalPath = episode.narrationUrl ? `/app${episode.narrationUrl}` : null;
+    const hasNarration = narrationLocalPath && fs.existsSync(narrationLocalPath);
+
+    if (hasNarration) {
+      const tempPath = finalPath.replace(".mp4", "_silent.mp4");
+      await mergeVideoClips(clipPaths, tempPath);
+      console.log(`[FFmpeg] 나레이션 합성 중: ${narrationLocalPath}`);
+      await mergeVideoWithNarration(tempPath, narrationLocalPath!, finalPath);
+      fs.unlinkSync(tempPath);
+      console.log(`[FFmpeg] 나레이션 포함 최종 영상 완료: ${finalPath}`);
+    } else {
+      await mergeVideoClips(clipPaths, finalPath);
+      console.log(`[FFmpeg] 나레이션 없음, 영상만 병합: ${finalPath}`);
+    }
 
     await prisma.episode.update({
       where: { id: req.params.id },
       data: { status: "COMPLETE" },
     });
 
-    res.json({ message: "클립 병합 완료", outputPath: outputPath.replace("/app", "") });
+    res.json({
+      message: hasNarration ? "클립 병합 + 나레이션 합성 완료" : "클립 병합 완료 (나레이션 없음)",
+      outputPath: finalPath.replace("/app", ""),
+      hasNarration,
+    });
   } catch (err) { next(err); }
 }

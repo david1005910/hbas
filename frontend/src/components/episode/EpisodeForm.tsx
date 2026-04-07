@@ -5,6 +5,7 @@ import type { AnimStyle } from "../../types";
 
 const ANIM_STYLES: AnimStyle[] = [
   "Epic 3D Cinematic",
+  "Pixar 3D Animation",
   "Hand-painted Watercolor 3D",
   "Ancient Fresco Style",
   "Dark Fantasy 3D",
