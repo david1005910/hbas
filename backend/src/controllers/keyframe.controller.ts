@@ -32,7 +32,7 @@ export async function generateEpisodeKeyframes(req: Request, res: Response, next
           episode.animStyle || "Epic 3D Cinematic"
         );
         console.log(`[Keyframe] Generating scene ${i}, episodeId=${episode.id}, model=${process.env.NANO_BANANA_MODEL}`);
-        const imageBuffer = await generateKeyframe(prompt);
+        const imageBuffer = await generateKeyframe(prompt, "16:9", episode.id, i);
         const filePath = saveKeyframe(episode.id, i, imageBuffer);
 
         await prisma.sceneKeyframe.create({
@@ -71,7 +71,7 @@ export async function generateSingleKeyframe(req: Request, res: Response, next: 
 
     const nanaBananaPrompt = buildNanoBananaPrompt(finalPrompt, style);
     console.log(`[Keyframe] Regenerating scene ${sceneNumber}, episodeId=${eId}, model=${process.env.NANO_BANANA_MODEL}`);
-    const imageBuffer = await generateKeyframe(nanaBananaPrompt);
+    const imageBuffer = await generateKeyframe(nanaBananaPrompt, "16:9", eId, sceneNumber);
     const filePath = saveKeyframe(eId, sceneNumber, imageBuffer);
 
     const keyframe = await prisma.sceneKeyframe.create({

@@ -36,6 +36,7 @@ export async function generateScript(req: Request, res: Response, next: NextFunc
     if (!episode) return;
 
     sseHeaders(res);
+    console.log(`[Gemini] 스크립트 생성 시작, episodeId=${episode.id}, model=${process.env.GEMINI_MODEL || "gemini-2.5-flash"}`);
     const prompt = buildScriptPrompt(episode);
     let fullContent = "";
 
@@ -73,6 +74,7 @@ export async function generateAnimPrompt(req: Request, res: Response, next: Next
     if (!episode) return;
 
     sseHeaders(res);
+    console.log(`[Gemini] 애니메이션 프롬프트 생성 시작, episodeId=${episode.id}, model=${process.env.GEMINI_MODEL || "gemini-2.5-flash"}`);
     const prompt = buildAnimPromptRequest(episode);
     let fullContent = "";
 

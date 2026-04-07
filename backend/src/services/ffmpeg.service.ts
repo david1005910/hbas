@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { execSync } from "child_process";
+import { buildSceneAss } from "../utils/srtParser";
 
 /** ffprobe로 미디어 파일 총 길이(초) 반환 */
 export function getMediaDuration(filePath: string): number {
@@ -29,39 +30,22 @@ export async function embedSubtitleToClip(
   outputPath: string,
   heSrtContent?: string
 ): Promise<void> {
-  // ASS 파일 생성 (srtParser의 buildSceneAss 로직을 직접 인라인 처리)
+  // SRT → 텍스트 추출 (타임코드·인덱스 줄 제거)
+  const extractText = (srt: string) =>
+    srt.split("\n").filter((l) => {
+      const t = l.trim();
+      return t && !/^\d+$/.test(t) && !/^\d{2}:\d{2}:\d{2}/.test(t);
+    }).join(" ").trim();
+
+  const koText = extractText(koSrtContent);
+  const heText = heSrtContent ? extractText(heSrtContent) : undefined;
+
+  // ASS 파일 생성 — srtParser.buildSceneAss 사용 (중복 제거)
+  const clipDuration = getMediaDuration(clipPath);
+  const assContent = buildSceneAss(koText, heText, clipDuration);
+
   const ts = Date.now();
   const tmpAss = path.join(os.tmpdir(), `sub_${ts}.ass`);
-
-  // SRT → 텍스트 추출 (첫 번째 자막 항목의 text)
-  const koText = koSrtContent.split("\n").filter((l) => {
-    const t = l.trim();
-    return t && !/^\d+$/.test(t) && !/^\d{2}:\d{2}:\d{2}/.test(t);
-  }).join(" ").trim();
-
-  const heText = heSrtContent ? heSrtContent.split("\n").filter((l) => {
-    const t = l.trim();
-    return t && !/^\d+$/.test(t) && !/^\d{2}:\d{2}:\d{2}/.test(t);
-  }).join(" ").trim() : undefined;
-
-  const assContent = [
-    "[Script Info]",
-    "ScriptType: v4.00+",
-    "PlayResX: 1920",
-    "PlayResY: 1080",
-    "WrapStyle: 0",
-    "",
-    "[V4+ Styles]",
-    "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding",
-    "Style: Korean,Noto Sans CJK KR,44,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,30,30,30,1",
-    "Style: Hebrew,Noto Sans,38,&H0000D4FF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,30,30,90,1",
-    "",
-    "[Events]",
-    "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text",
-    `Dialogue: 0,0:00:00.50,0:00:07.50,Korean,,0,0,0,,${koText}`,
-    ...(heText ? [`Dialogue: 0,0:00:00.50,0:00:07.50,Hebrew,,0,0,0,,${heText}`] : []),
-  ].join("\n");
-
   fs.writeFileSync(tmpAss, assContent, "utf8");
 
   const cleanup = () => { if (fs.existsSync(tmpAss)) fs.unlinkSync(tmpAss); };
