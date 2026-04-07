@@ -29,6 +29,7 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
   const [isProducing, setIsProducing] = useState(false);
   const [produceLog, setProduceLog] = useState<string[]>([]);
   const [finalOutputUrl, setFinalOutputUrl] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     const processing = clips.filter((c) => c.status === "PROCESSING");
@@ -93,8 +94,10 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
     try {
       await videoClipsApi.delete(clipId);
       setClips((prev) => prev.filter((c) => c.id !== clipId));
+      setConfirmDeleteId(null);
       onUpdate?.();
     } catch (e: any) {
+      setConfirmDeleteId(null);
       setActionMsg(`⚠️ 삭제 오류: ${e?.response?.data?.error ?? e.message}`);
     }
   }
@@ -519,24 +522,56 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                           다운로드
                         </a>
                       )}
-                      {clip && (clip.status === "FAILED" || clip.status === "PENDING") && (
+                      {clip && confirmDeleteId !== clip.id && (
                         <button
-                          onClick={() => handleDeleteClip(clip.id)}
+                          onClick={() => setConfirmDeleteId(clip.id)}
                           style={{
                             display: "flex", alignItems: "center", gap: "4px",
-                            padding: "5px 12px", borderRadius: "14px",
-                            background: "rgba(239,68,68,0.2)",
-                            border: "1px solid rgba(239,68,68,0.4)",
-                            color: "#fca5a5", fontSize: "0.75rem",
+                            padding: "5px 10px", borderRadius: "14px",
+                            background: "rgba(239,68,68,0.15)",
+                            border: "1px solid rgba(239,68,68,0.3)",
+                            color: "#fca5a5", fontSize: "0.72rem",
                             cursor: "pointer",
                             transition: "all 0.2s ease",
                           }}
                           className="font-body"
                           title="클립 삭제"
                         >
-                          <Trash2 size={12} />
-                          삭제
+                          <Trash2 size={11} />
                         </button>
+                      )}
+                      {clip && confirmDeleteId === clip.id && (
+                        <div className="flex items-center gap-1.5">
+                          <span style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.6)" }} className="font-body">
+                            삭제?
+                          </span>
+                          <button
+                            onClick={() => handleDeleteClip(clip.id)}
+                            style={{
+                              padding: "4px 10px", borderRadius: "12px",
+                              background: "rgba(239,68,68,0.4)",
+                              border: "1px solid rgba(239,68,68,0.6)",
+                              color: "#fca5a5", fontSize: "0.72rem",
+                              fontWeight: 700, cursor: "pointer",
+                            }}
+                            className="font-body"
+                          >
+                            확인
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteId(null)}
+                            style={{
+                              padding: "4px 10px", borderRadius: "12px",
+                              background: "rgba(255,255,255,0.08)",
+                              border: "1px solid rgba(255,255,255,0.2)",
+                              color: "rgba(255,255,255,0.5)", fontSize: "0.72rem",
+                              cursor: "pointer",
+                            }}
+                            className="font-body"
+                          >
+                            취소
+                          </button>
+                        </div>
                       )}
                       {!clip && confirmScene !== kf.sceneNumber && (
                         <button

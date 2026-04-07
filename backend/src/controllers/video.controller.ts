@@ -169,7 +169,7 @@ export async function mergeClips(req: Request, res: Response, next: NextFunction
 }
 
 /**
- * 영상 클립 삭제 (FAILED 또는 PENDING 상태만)
+ * 영상 클립 삭제 (모든 상태)
  * DELETE /api/v1/video-clips/:id
  */
 export async function deleteVideoClip(req: Request, res: Response, next: NextFunction) {
