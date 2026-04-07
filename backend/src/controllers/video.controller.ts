@@ -192,7 +192,7 @@ export async function deleteVideoClip(req: Request, res: Response, next: NextFun
 }
 
 /**
- * 모든 완료된 클립에 SRT_KO 자막 삽입
+ * 모든 완료된 클립에 SRT_KO + SRT_HE 자막 삽입
  * POST /api/v1/episodes/:id/burn-subtitles
  */
 export async function burnSubtitlesToClips(req: Request, res: Response, next: NextFunction) {
@@ -200,11 +200,17 @@ export async function burnSubtitlesToClips(req: Request, res: Response, next: Ne
     const episode = await prisma.episode.findUnique({ where: { id: req.params.id } });
     if (!episode) return res.status(404).json({ error: "Episode not found" });
 
-    const srtRecord = await prisma.generatedContent.findFirst({
-      where: { episodeId: req.params.id, contentType: "SRT_KO" },
-      orderBy: { createdAt: "desc" },
-    });
-    if (!srtRecord) return res.status(400).json({ error: "먼저 SRT_KO를 생성하세요" });
+    const [srtKoRecord, srtHeRecord] = await Promise.all([
+      prisma.generatedContent.findFirst({
+        where: { episodeId: req.params.id, contentType: "SRT_KO" },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.generatedContent.findFirst({
+        where: { episodeId: req.params.id, contentType: "SRT_HE" },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+    if (!srtKoRecord) return res.status(400).json({ error: "먼저 SRT_KO를 생성하세요" });
 
     const clips = await prisma.sceneVideoClip.findMany({
       where: { episodeId: req.params.id, status: "COMPLETED" },
@@ -216,25 +222,27 @@ export async function burnSubtitlesToClips(req: Request, res: Response, next: Ne
 
     for (const clip of clips) {
       if (!clip.clipUrl) continue;
-      const sceneSrt = buildSceneSrt(srtRecord.content, clip.sceneNumber, clip.durationSec);
-      if (!sceneSrt) {
-        console.warn(`[Subtitle] 씬 ${clip.sceneNumber} SRT 항목 없음, 건너뜀`);
-        continue;
-      }
+
+      const koSrt = buildSceneSrt(srtKoRecord.content, clip.sceneNumber, clip.durationSec);
+      if (!koSrt) { console.warn(`[Subtitle] 씬 ${clip.sceneNumber} KO SRT 없음, 건너뜀`); continue; }
+
+      const heSrt = srtHeRecord
+        ? buildSceneSrt(srtHeRecord.content, clip.sceneNumber, clip.durationSec)
+        : undefined;
 
       const clipLocalPath = `/app${clip.clipUrl}`;
-      const subDir = path.dirname(clipLocalPath);
-      const subOutputPath = path.join(subDir, `scene_${clip.sceneNumber}_sub.mp4`);
+      const subOutputPath = path.join(path.dirname(clipLocalPath), `scene_${clip.sceneNumber}_sub.mp4`);
 
-      console.log(`[Subtitle] 씬 ${clip.sceneNumber} 자막 삽입 중`);
-      await embedSubtitleToClip(clipLocalPath, sceneSrt, subOutputPath);
+      const tracks = heSrt ? "KO+HE" : "KO";
+      console.log(`[Subtitle] 씬 ${clip.sceneNumber} 자막 삽입 중 (${tracks})`);
+      await embedSubtitleToClip(clipLocalPath, koSrt, subOutputPath, heSrt || undefined);
 
       await prisma.sceneVideoClip.update({
         where: { id: clip.id },
         data: { subClipUrl: subOutputPath.replace("/app", "") },
       });
 
-      results.push(`씬 ${clip.sceneNumber}`);
+      results.push(`씬 ${clip.sceneNumber}(${tracks})`);
     }
 
     res.json({ message: `자막 삽입 완료: ${results.join(", ")}`, scenes: results });
@@ -329,25 +337,39 @@ export async function produceFinal(req: Request, res: Response, next: NextFuncti
     // ── STEP 1: 자막 삽입 ────────────────────────────────────
     send("subtitle", `📝 자막 삽입 시작 (${clips.length}개 씬)`);
 
-    const srtRecord = await prisma.generatedContent.findFirst({
-      where: { episodeId, contentType: "SRT_KO" },
-      orderBy: { createdAt: "desc" },
-    });
+    const [srtKoRecord, srtHeRecord] = await Promise.all([
+      prisma.generatedContent.findFirst({
+        where: { episodeId, contentType: "SRT_KO" },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.generatedContent.findFirst({
+        where: { episodeId, contentType: "SRT_HE" },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
 
     const updatedClips = [...clips];
 
-    if (srtRecord) {
+    if (srtKoRecord) {
+      const tracks = srtHeRecord ? "한국어+히브리어" : "한국어";
+      send("subtitle", `  ${tracks} 자막 삽입 중...`);
+
       for (let i = 0; i < clips.length; i++) {
         const clip = clips[i];
         if (!clip.clipUrl) continue;
-        const sceneSrt = buildSceneSrt(srtRecord.content, clip.sceneNumber, clip.durationSec);
-        if (!sceneSrt) continue;
+
+        const koSrt = buildSceneSrt(srtKoRecord.content, clip.sceneNumber, clip.durationSec);
+        if (!koSrt) continue;
+
+        const heSrt = srtHeRecord
+          ? buildSceneSrt(srtHeRecord.content, clip.sceneNumber, clip.durationSec) || undefined
+          : undefined;
 
         const clipLocalPath = `/app${clip.clipUrl}`;
         const subOutputPath = path.join(path.dirname(clipLocalPath), `scene_${clip.sceneNumber}_sub.mp4`);
 
-        send("subtitle", `  씬 ${clip.sceneNumber} 자막 삽입 중...`);
-        await embedSubtitleToClip(clipLocalPath, sceneSrt, subOutputPath);
+        send("subtitle", `  씬 ${clip.sceneNumber} (${heSrt ? "KO+HE" : "KO"}) 삽입 중...`);
+        await embedSubtitleToClip(clipLocalPath, koSrt, subOutputPath, heSrt);
 
         const updated = await prisma.sceneVideoClip.update({
           where: { id: clip.id },
@@ -355,7 +377,7 @@ export async function produceFinal(req: Request, res: Response, next: NextFuncti
         });
         updatedClips[i] = updated as any;
       }
-      send("subtitle", `✅ 자막 삽입 완료`);
+      send("subtitle", `✅ 자막 삽입 완료 (${tracks})`);
     } else {
       send("subtitle", `⚠️ SRT_KO 없음 — 자막 삽입 건너뜀`);
     }

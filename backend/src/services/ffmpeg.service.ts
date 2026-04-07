@@ -17,31 +17,64 @@ export function getMediaDuration(filePath: string): number {
  * - SRT 텍스트를 임시 파일로 저장 후 mov_text 스트림으로 삽입
  * - 폰트 설치 불필요, MP4 내 자막 트랙
  */
+/**
+ * 씬별 소프트 자막 트랙 삽입 (한국어 + 히브리어 동시 지원)
+ * - koSrtContent: 한국어 SRT (필수)
+ * - heSrtContent: 히브리어 SRT (선택, 있으면 두 번째 트랙으로 추가)
+ */
 export async function embedSubtitleToClip(
   clipPath: string,
-  srtContent: string,
-  outputPath: string
+  koSrtContent: string,
+  outputPath: string,
+  heSrtContent?: string
 ): Promise<void> {
-  const tmpSrt = path.join(os.tmpdir(), `sub_${Date.now()}.srt`);
-  // UTF-8 BOM 없이 저장 (mov_text 호환)
-  fs.writeFileSync(tmpSrt, srtContent.replace(/^\uFEFF/, ""), "utf8");
+  const ts = Date.now();
+  const tmpKo = path.join(os.tmpdir(), `sub_ko_${ts}.srt`);
+  const tmpHe = heSrtContent ? path.join(os.tmpdir(), `sub_he_${ts}.srt`) : null;
+
+  fs.writeFileSync(tmpKo, koSrtContent.replace(/^\uFEFF/, ""), "utf8");
+  if (tmpHe && heSrtContent) {
+    fs.writeFileSync(tmpHe, heSrtContent.replace(/^\uFEFF/, ""), "utf8");
+  }
+
+  const cleanup = () => {
+    if (fs.existsSync(tmpKo)) fs.unlinkSync(tmpKo);
+    if (tmpHe && fs.existsSync(tmpHe)) fs.unlinkSync(tmpHe);
+  };
 
   return new Promise((resolve, reject) => {
-    ffmpeg()
+    const cmd = ffmpeg()
       .input(clipPath)
-      .input(tmpSrt)
-      .outputOptions([
-        "-map 0:v:0",
-        "-map 0:a:0?",             // 오디오가 없는 Veo 클립 대응 (옵셔널)
-        "-map 1:s:0",              // 자막 스트림
-        "-c:v copy",
-        "-c:a copy",
-        "-c:s mov_text",           // MP4 소프트 자막 코덱
-        "-metadata:s:s:0 language=kor",
-      ])
+      .input(tmpKo);
+
+    if (tmpHe) cmd.input(tmpHe);
+
+    const outputOpts = [
+      "-map 0:v:0",
+      "-map 0:a:0?",          // Veo 클립은 오디오 없을 수 있음
+      "-map 1:s:0",           // 한국어 자막 트랙
+    ];
+    if (tmpHe) outputOpts.push("-map 2:s:0");   // 히브리어 자막 트랙
+
+    outputOpts.push(
+      "-c:v copy",
+      "-c:a copy",
+      "-c:s mov_text",
+      "-metadata:s:s:0 language=kor",
+      "-metadata:s:s:0 title=Korean",
+    );
+    if (tmpHe) {
+      outputOpts.push(
+        "-metadata:s:s:1 language=heb",
+        "-metadata:s:s:1 title=Hebrew",
+      );
+    }
+
+    cmd
+      .outputOptions(outputOpts)
       .output(outputPath)
-      .on("end", () => { fs.unlinkSync(tmpSrt); resolve(); })
-      .on("error", (err) => { if (fs.existsSync(tmpSrt)) fs.unlinkSync(tmpSrt); reject(err); })
+      .on("end", () => { cleanup(); resolve(); })
+      .on("error", (err) => { cleanup(); reject(err); })
       .run();
   });
 }
