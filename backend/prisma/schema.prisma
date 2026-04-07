@@ -108,6 +108,8 @@ model SceneVideoClip {
   veoJobId    String?         @db.VarChar(200)
   status      VideoClipStatus @default(PENDING)
   clipUrl     String?         @db.VarChar(500)
+  subClipUrl  String?         @db.VarChar(500)   // 자막 삽입된 클립
+  narrClipUrl String?         @db.VarChar(500)   // 나레이션 합성된 클립
   durationSec Int             @default(4)
   createdAt   DateTime        @default(now())
 

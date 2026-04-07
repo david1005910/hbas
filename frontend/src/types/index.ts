@@ -77,7 +77,9 @@ export interface SceneVideoClip {
   sceneNumber: number;
   veoJobId?: string;
   status: VideoClipStatus;
-  clipUrl?: string;
+  clipUrl?: string | null;
+  subClipUrl?: string | null;
+  narrClipUrl?: string | null;
   durationSec: number;
   createdAt: string;
 }

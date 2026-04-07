@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { streamGenerate } from "../services/gemini.service";
+import { streamGenerate, generateOnce } from "../services/gemini.service";
 import { generateSrtPack } from "../services/srt.service";
 import { generateYtMetaPack } from "../services/ytMeta.service";
 import { generateNarration } from "../services/tts.service";
@@ -154,14 +154,33 @@ export async function generateNarrationAudio(req: Request, res: Response, next: 
     const episode = await getEpisodeOrFail(req.params.id, res);
     if (!episode) return;
 
-    const latestSrtKo = await prisma.generatedContent.findFirst({
-      where: { episodeId: episode.id, contentType: "SRT_KO" },
+    const latestScript = await prisma.generatedContent.findFirst({
+      where: { episodeId: episode.id, contentType: "SCRIPT" },
       orderBy: { createdAt: "desc" },
     });
-    if (!latestSrtKo) return res.status(400).json({ error: "먼저 자막(SRT_KO)을 생성하세요" });
+    if (!latestScript) return res.status(400).json({ error: "먼저 스크립트를 생성하세요" });
 
-    console.log(`[Narration] 나레이션 생성 시작 (SRT_KO 기반), episodeId=${episode.id}`);
-    const filePath = await generateNarration(episode.id, latestSrtKo.content);
+    // Gemini로 상세 나레이션 대본 생성 (SRT 읽기 대신 내용 설명)
+    const narrationPrompt = `다음은 구약 히브리 성경 기반 유튜브 3D 애니메이션의 에피소드 스크립트입니다.
+
+에피소드 제목: ${episode.titleKo}
+성경 범위: ${episode.verseRange || ""}
+
+스크립트:
+${latestScript.content}
+
+위 내용을 바탕으로 유튜브 다큐멘터리 나레이션 대본을 작성해주세요.
+- 중년 남성 나레이터가 읽는 차분하고 깊이 있는 나레이션 톤
+- 성경 본문의 신학적 의미와 역사적 배경을 상세히 설명
+- 시청자가 장면을 이해할 수 있도록 생생한 묘사 포함
+- 한국어로만 작성, 자막 번호/타임코드 없이 순수 나레이션 텍스트만
+- 약 500~800자 분량으로 작성`;
+
+    console.log(`[Narration] Gemini 나레이션 대본 생성 중, episodeId=${episode.id}`);
+    const narrationText = await generateOnce(narrationPrompt);
+    console.log(`[Narration] 대본 생성 완료 (${narrationText.length}자), TTS 변환 시작`);
+
+    const filePath = await generateNarration(episode.id, narrationText);
     const narrationUrl = filePath.replace("/app", "");
 
     await prisma.episode.update({
@@ -170,8 +189,9 @@ export async function generateNarrationAudio(req: Request, res: Response, next: 
     });
 
     res.json({
-      message: "나레이션 생성 완료 (중년 남성 · ko-KR-Neural2-C)",
+      message: "나레이션 생성 완료 (Gemini 대본 · ko-KR-Neural2-C · 부드러운 중년 남성)",
       narrationUrl,
+      scriptLength: narrationText.length,
     });
   } catch (err) { next(err); }
 }

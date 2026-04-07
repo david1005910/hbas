@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Play, RefreshCw, Film, CheckCircle, XCircle, Clock } from "lucide-react";
+import { Play, RefreshCw, Film, CheckCircle, XCircle, Clock, FileText, Mic2 } from "lucide-react";
 import { videoClipsApi } from "../../api/videoClips";
 import type { SceneKeyframe, SceneVideoClip } from "../../types";
 
@@ -23,6 +23,9 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
   const [mergeError, setMergeError] = useState("");
   const [mergeResult, setMergeResult] = useState<string | null>(null);
   const [confirmScene, setConfirmScene] = useState<number | null>(null);
+  const [isBurningSubtitles, setIsBurningSubtitles] = useState(false);
+  const [isAddingNarration, setIsAddingNarration] = useState(false);
+  const [actionMsg, setActionMsg] = useState("");
 
   useEffect(() => {
     const processing = clips.filter((c) => c.status === "PROCESSING");
@@ -46,6 +49,34 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
     });
     setClips((prev) => [...prev, clip]);
     setConfirmScene(null);
+  }
+
+  async function handleBurnSubtitles() {
+    setIsBurningSubtitles(true);
+    setActionMsg("");
+    try {
+      const res = await videoClipsApi.burnSubtitles(episodeId);
+      setActionMsg(`✅ ${res.message}`);
+      onUpdate?.();
+    } catch (e: any) {
+      setActionMsg(`⚠️ 자막 오류: ${e?.response?.data?.error ?? e.message}`);
+    } finally {
+      setIsBurningSubtitles(false);
+    }
+  }
+
+  async function handleAddNarration() {
+    setIsAddingNarration(true);
+    setActionMsg("");
+    try {
+      const res = await videoClipsApi.addNarration(episodeId);
+      setActionMsg(`✅ ${res.message}`);
+      onUpdate?.();
+    } catch (e: any) {
+      setActionMsg(`⚠️ 나레이션 오류: ${e?.response?.data?.error ?? e.message}`);
+    } finally {
+      setIsAddingNarration(false);
+    }
   }
 
   async function handleMerge() {
@@ -189,6 +220,63 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
             )}
           </div>
 
+          {/* Per-clip subtitle & narration action buttons */}
+          {completedCount >= 1 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={handleBurnSubtitles}
+                disabled={isBurningSubtitles}
+                style={{
+                  display: "flex", alignItems: "center", gap: "6px",
+                  padding: "7px 14px", borderRadius: "18px",
+                  background: "linear-gradient(135deg, rgba(99,102,241,0.4) 0%, rgba(139,92,246,0.3) 100%)",
+                  border: "1px solid rgba(255,255,255,0.3)", color: "#ffffff",
+                  fontSize: "0.8rem", fontWeight: 500,
+                  cursor: isBurningSubtitles ? "not-allowed" : "pointer",
+                  opacity: isBurningSubtitles ? 0.5 : 1,
+                  boxShadow: "0px 3px 10px rgba(0,0,0,0.15), inset 0px 1px 1px rgba(255,255,255,0.2)",
+                  transition: "all 0.2s ease",
+                }}
+                className="font-body"
+              >
+                <FileText size={13} />
+                {isBurningSubtitles ? "자막 삽입 중..." : "씬별 자막 삽입"}
+              </button>
+              <button
+                onClick={handleAddNarration}
+                disabled={isAddingNarration}
+                style={{
+                  display: "flex", alignItems: "center", gap: "6px",
+                  padding: "7px 14px", borderRadius: "18px",
+                  background: "linear-gradient(135deg, rgba(236,72,153,0.4) 0%, rgba(249,115,22,0.3) 100%)",
+                  border: "1px solid rgba(255,255,255,0.3)", color: "#ffffff",
+                  fontSize: "0.8rem", fontWeight: 500,
+                  cursor: isAddingNarration ? "not-allowed" : "pointer",
+                  opacity: isAddingNarration ? 0.5 : 1,
+                  boxShadow: "0px 3px 10px rgba(0,0,0,0.15), inset 0px 1px 1px rgba(255,255,255,0.2)",
+                  transition: "all 0.2s ease",
+                }}
+                className="font-body"
+              >
+                <Mic2 size={13} />
+                {isAddingNarration ? "나레이션 합성 중..." : "씬별 나레이션 합성"}
+              </button>
+            </div>
+          )}
+
+          {/* Action message */}
+          {actionMsg && (
+            <div style={{
+              borderRadius: "14px", padding: "8px 12px",
+              background: actionMsg.startsWith("✅") ? "rgba(134,239,172,0.12)" : "rgba(239,68,68,0.15)",
+              border: `1px solid ${actionMsg.startsWith("✅") ? "rgba(134,239,172,0.3)" : "rgba(239,68,68,0.35)"}`,
+              color: actionMsg.startsWith("✅") ? "#86efac" : "#fca5a5",
+              fontSize: "0.78rem",
+            }} className="font-body">
+              {actionMsg}
+            </div>
+          )}
+
           {/* Merge result / error */}
           {mergeError && (
             <div style={{
@@ -275,7 +363,7 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                           씬 {kf.sceneNumber}
                         </p>
                         {clip && (
-                          <div className="flex items-center gap-1.5 mt-0.5">
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                             {STATUS_ICON[clip.status]}
                             <span
                               style={{
@@ -287,6 +375,12 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                             >
                               {clip.status}
                             </span>
+                            {clip.subClipUrl && (
+                              <span style={{ fontSize: "0.7rem", color: "#a5b4fc", background: "rgba(99,102,241,0.2)", padding: "1px 6px", borderRadius: "8px" }}>자막</span>
+                            )}
+                            {clip.narrClipUrl && (
+                              <span style={{ fontSize: "0.7rem", color: "#f9a8d4", background: "rgba(236,72,153,0.2)", padding: "1px 6px", borderRadius: "8px" }}>나레이션</span>
+                            )}
                           </div>
                         )}
                       </div>

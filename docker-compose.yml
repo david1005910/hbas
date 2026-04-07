@@ -24,6 +24,7 @@ services:
       - ./backend/src:/app/src
       - ./storage:/app/storage
       - ./storage/audio:/app/storage/audio
+      - ./storage/bgm:/app/storage/bgm
       - ./service-account.json:/app/service-account.json:ro
     env_file:
       - .env

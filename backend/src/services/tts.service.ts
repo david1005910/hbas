@@ -6,7 +6,7 @@ import { getGcpAccessToken } from "../config/vertexai";
 const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const AUDIO_BASE = process.env.AUDIO_STORAGE_PATH || "/app/storage/audio";
 
-// 중년 남성 부드러운 한국어 나레이션 목소리
+// 중년 남성 부드럽고 차분한 한국어 나레이션 목소리
 const NARRATION_VOICE = {
   languageCode: "ko-KR",
   name: "ko-KR-Neural2-C",   // 남성 Neural2 (최고품질)
@@ -15,8 +15,8 @@ const NARRATION_VOICE = {
 
 const NARRATION_AUDIO_CONFIG = {
   audioEncoding: "MP3",
-  speakingRate: 0.88,   // 약간 느리게 — 중후한 나레이션 톤
-  pitch: -2.5,          // 낮은 음조 — 중년 남성
+  speakingRate: 0.78,   // 천천히 — 차분한 다큐 나레이션 톤
+  pitch: -1.0,          // 살짝 낮게 — 부드럽고 안정감 있는 음색
   volumeGainDb: 1.0,
 };
 
@@ -45,12 +45,13 @@ function extractSrtText(srtContent: string): string {
 
 export async function generateNarration(
   episodeId: string,
-  srtText: string
+  inputText: string
 ): Promise<string> {
   const token = await getGcpAccessToken();
 
-  // SRT → 순수 자막 텍스트 추출 (숫자·타임코드 제거)
-  const extracted = extractSrtText(srtText);
+  // SRT 형식이면 파싱, 아니면 그대로 사용 (Gemini 대본은 순수 텍스트)
+  const isSrt = /^\d+\s*\n\d{2}:\d{2}:\d{2}/.test(inputText.trim());
+  const extracted = isSrt ? extractSrtText(inputText) : inputText.trim();
 
   // Google TTS 단건 한도: 5000 bytes (한글 3바이트/자)
   // 바이트 기준으로 4800 bytes까지만 사용
