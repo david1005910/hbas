@@ -73,9 +73,8 @@ export async function embedSubtitleToClip(
     ffmpeg()
       .input(clipPath)
       .outputOptions([
-        `-vf ass=${escapedAss}`,
-        "-map 0:v:0",
-        "-map 0:a:0?",
+        `-vf ass=${escapedAss}`,   // -vf 사용 시 -map 0:v:0 불필요 (필터가 대체)
+        "-map 0:a:0?",             // 오디오만 명시적 매핑 (없으면 무시)
         "-c:v libx264",
         "-preset fast",
         "-crf 22",

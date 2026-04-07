@@ -306,6 +306,34 @@ export async function addNarrationToClips(req: Request, res: Response, next: Nex
 }
 
 /**
+ * 씬 클립의 subClipUrl / narrClipUrl 초기화 (재처리 전 리셋)
+ * POST /api/v1/episodes/:id/reset-clips
+ */
+export async function resetClipProcessing(req: Request, res: Response, next: NextFunction) {
+  try {
+    const clips = await prisma.sceneVideoClip.findMany({
+      where: { episodeId: req.params.id, status: "COMPLETED" },
+    });
+
+    for (const clip of clips) {
+      // 처리된 파일 삭제
+      for (const url of [clip.subClipUrl, clip.narrClipUrl]) {
+        if (!url) continue;
+        const p = `/app${url}`;
+        if (fs.existsSync(p)) try { fs.unlinkSync(p); } catch { /* ignore */ }
+      }
+    }
+
+    await prisma.sceneVideoClip.updateMany({
+      where: { episodeId: req.params.id, status: "COMPLETED" },
+      data: { subClipUrl: null, narrClipUrl: null },
+    });
+
+    res.json({ message: `${clips.length}개 클립 초기화 완료 — 최종 영상 생성을 다시 실행하세요` });
+  } catch (err) { next(err); }
+}
+
+/**
  * 자막 삽입 → 나레이션 합성 → 최종 병합(+BGM)을 한 번에 실행
  * POST /api/v1/episodes/:id/produce-final  (SSE 스트림)
  */

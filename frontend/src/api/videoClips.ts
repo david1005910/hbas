@@ -20,4 +20,6 @@ export const videoClipsApi = {
     const base = import.meta.env.VITE_API_URL || "";
     return `${base}/api/v1/episodes/${episodeId}/produce-final`;
   },
+  resetClips: (episodeId: string) =>
+    api.post(`/episodes/${episodeId}/reset-clips`).then((r) => r.data),
 };

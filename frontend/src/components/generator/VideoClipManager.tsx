@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Play, RefreshCw, Film, CheckCircle, XCircle, Clock, FileText, Mic2, Trash2 } from "lucide-react";
+import { Play, RefreshCw, Film, CheckCircle, XCircle, Clock, FileText, Mic2, Trash2, RotateCcw } from "lucide-react";
 import { videoClipsApi } from "../../api/videoClips";
 import type { SceneKeyframe, SceneVideoClip } from "../../types";
 
@@ -30,6 +30,7 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
   const [produceLog, setProduceLog] = useState<string[]>([]);
   const [finalOutputUrl, setFinalOutputUrl] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
     const processing = clips.filter((c) => c.status === "PROCESSING");
@@ -53,6 +54,22 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
     });
     setClips((prev) => [...prev, clip]);
     setConfirmScene(null);
+  }
+
+  async function handleResetClips() {
+    setIsResetting(true);
+    setActionMsg("");
+    try {
+      const res = await videoClipsApi.resetClips(episodeId);
+      setActionMsg(`✅ ${res.message}`);
+      setProduceLog([]);
+      setFinalOutputUrl(null);
+      onUpdate?.();
+    } catch (e: any) {
+      setActionMsg(`⚠️ 초기화 오류: ${e?.response?.data?.error ?? e.message}`);
+    } finally {
+      setIsResetting(false);
+    }
   }
 
   async function handleProduceFinal() {
@@ -287,27 +304,49 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                     자막 삽입 → 나레이션 합성 → 병합 → BGM 자동 처리
                   </p>
                 </div>
-                <button
-                  onClick={handleProduceFinal}
-                  disabled={isProducing}
-                  style={{
-                    display: "flex", alignItems: "center", gap: "8px",
-                    padding: "10px 22px", borderRadius: "20px",
-                    background: isProducing
-                      ? "rgba(255,255,255,0.1)"
-                      : "linear-gradient(135deg, rgba(16,185,129,0.5) 0%, rgba(59,130,246,0.4) 100%)",
-                    border: "1px solid rgba(16,185,129,0.6)",
-                    color: "#ffffff", fontWeight: 700, fontSize: "0.875rem",
-                    cursor: isProducing ? "not-allowed" : "pointer",
-                    boxShadow: "0px 4px 16px rgba(16,185,129,0.3), inset 0px 1px 1px rgba(255,255,255,0.3)",
-                    transition: "all 0.2s ease",
-                  }}
-                  className="font-body"
-                >
-                  {isProducing
-                    ? <><RefreshCw size={14} className="animate-spin" /> 처리 중...</>
-                    : <><Film size={14} /> 최종 영상 생성</>}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleProduceFinal}
+                    disabled={isProducing || isResetting}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "8px",
+                      padding: "10px 22px", borderRadius: "20px",
+                      background: isProducing
+                        ? "rgba(255,255,255,0.1)"
+                        : "linear-gradient(135deg, rgba(16,185,129,0.5) 0%, rgba(59,130,246,0.4) 100%)",
+                      border: "1px solid rgba(16,185,129,0.6)",
+                      color: "#ffffff", fontWeight: 700, fontSize: "0.875rem",
+                      cursor: (isProducing || isResetting) ? "not-allowed" : "pointer",
+                      opacity: (isProducing || isResetting) ? 0.6 : 1,
+                      boxShadow: "0px 4px 16px rgba(16,185,129,0.3), inset 0px 1px 1px rgba(255,255,255,0.3)",
+                      transition: "all 0.2s ease",
+                    }}
+                    className="font-body"
+                  >
+                    {isProducing
+                      ? <><RefreshCw size={14} className="animate-spin" /> 처리 중...</>
+                      : <><Film size={14} /> 최종 영상 생성</>}
+                  </button>
+                  <button
+                    onClick={handleResetClips}
+                    disabled={isProducing || isResetting}
+                    title="기존 자막/나레이션 처리 초기화 후 재처리"
+                    style={{
+                      display: "flex", alignItems: "center", gap: "6px",
+                      padding: "10px 14px", borderRadius: "20px",
+                      background: "rgba(255,255,255,0.08)",
+                      border: "1px solid rgba(255,255,255,0.2)",
+                      color: "rgba(255,255,255,0.6)", fontSize: "0.8rem",
+                      cursor: (isProducing || isResetting) ? "not-allowed" : "pointer",
+                      opacity: (isProducing || isResetting) ? 0.5 : 1,
+                      transition: "all 0.2s ease",
+                    }}
+                    className="font-body"
+                  >
+                    <RotateCcw size={13} className={isResetting ? "animate-spin" : ""} />
+                    초기화
+                  </button>
+                </div>
               </div>
 
               {/* 진행 로그 */}
