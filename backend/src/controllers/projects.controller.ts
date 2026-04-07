@@ -51,7 +51,13 @@ export async function listProjectEpisodes(req: Request, res: Response, next: Nex
   try {
     const episodes = await prisma.episode.findMany({
       where: { projectId: req.params.id },
-      include: { bibleBook: true },
+      include: {
+        bibleBook: true,
+        // PipelineStatus 렌더링에 필요한 최소 데이터만 포함
+        contents: { select: { contentType: true }, distinct: ["contentType"] },
+        keyframes: { select: { id: true }, take: 1 },
+        videoClips: { select: { status: true }, where: { status: "COMPLETED" }, take: 1 },
+      },
       orderBy: { createdAt: "desc" },
     });
     res.json(episodes);

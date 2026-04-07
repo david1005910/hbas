@@ -74,12 +74,22 @@ export async function downloadAll(req: Request, res: Response, next: NextFunctio
       }
     }
 
+    // 씬별 최선 버전 클립 포함 (narrClipUrl > subClipUrl > clipUrl)
     for (const clip of episode.videoClips) {
-      if (clip.clipUrl) {
-        const localPath = `/app${clip.clipUrl}`;
+      const bestUrl = (clip as any).narrClipUrl ?? (clip as any).subClipUrl ?? clip.clipUrl;
+      if (bestUrl) {
+        const localPath = `/app${bestUrl}`;
         if (fs.existsSync(localPath)) {
           archive.file(localPath, { name: `video_clips/scene_${String(clip.sceneNumber).padStart(2, "0")}.mp4` });
         }
+      }
+    }
+
+    // 나레이션 MP3 포함
+    if (episode.narrationUrl) {
+      const narrPath = `/app${episode.narrationUrl}`;
+      if (fs.existsSync(narrPath)) {
+        archive.file(narrPath, { name: "narration.mp3" });
       }
     }
 

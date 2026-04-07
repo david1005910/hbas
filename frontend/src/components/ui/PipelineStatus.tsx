@@ -1,12 +1,13 @@
 import type { Episode, ContentType } from "../../types";
 
-const STEPS: { key: ContentType | "keyframe" | "video"; label: string; emoji: string }[] = [
-  { key: "SCRIPT", label: "스크립트", emoji: "📜" },
-  { key: "ANIM_PROMPT", label: "프롬프트", emoji: "✍️" },
-  { key: "keyframe", label: "키프레임", emoji: "🖼" },
-  { key: "video", label: "영상", emoji: "🎬" },
-  { key: "SRT_KO", label: "자막", emoji: "💬" },
-  { key: "YT_META", label: "메타", emoji: "📊" },
+const STEPS: { key: ContentType | "keyframe" | "video" | "narration"; label: string; emoji: string }[] = [
+  { key: "SCRIPT",     label: "스크립트", emoji: "📜" },
+  { key: "ANIM_PROMPT",label: "프롬프트", emoji: "✍️" },
+  { key: "keyframe",   label: "키프레임", emoji: "🖼" },
+  { key: "video",      label: "영상",    emoji: "🎬" },
+  { key: "narration",  label: "나레이션", emoji: "🎙" },
+  { key: "SRT_KO",     label: "자막",    emoji: "💬" },
+  { key: "YT_META",    label: "메타",    emoji: "📊" },
 ];
 
 interface Props { episode: Episode }
@@ -15,10 +16,12 @@ export function PipelineStatus({ episode }: Props) {
   const doneTypes = new Set(episode.contents?.map((c) => c.contentType) ?? []);
   const hasKeyframes = (episode.keyframes?.length ?? 0) > 0;
   const hasVideos = (episode.videoClips?.some((v) => v.status === "COMPLETED")) ?? false;
+  const hasNarration = !!episode.narrationUrl;
 
   function isDone(key: string) {
-    if (key === "keyframe") return hasKeyframes;
-    if (key === "video") return hasVideos;
+    if (key === "keyframe")  return hasKeyframes;
+    if (key === "video")     return hasVideos;
+    if (key === "narration") return hasNarration;
     return doneTypes.has(key as ContentType);
   }
 
