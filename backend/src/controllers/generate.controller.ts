@@ -189,7 +189,7 @@ ${latestScript.content}
     });
 
     res.json({
-      message: "나레이션 생성 완료 (Gemini 대본 · ko-KR-Neural2-A · 여성)",
+      message: "나레이션 생성 완료 (Gemini 대본 · ko-KR-Neural2-C · 중년 남성)",
       narrationUrl,
       scriptLength: narrationText.length,
     });
