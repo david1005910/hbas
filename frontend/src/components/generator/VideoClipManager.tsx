@@ -776,17 +776,24 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                   )}
 
                   {clip?.status === "COMPLETED" && clip.clipUrl && (
-                    <video
-                      src={clip.clipUrl}
-                      controls
-                      style={{
-                        width: "100%",
-                        marginTop: "12px",
-                        borderRadius: "16px",
-                        maxHeight: "200px",
-                        boxShadow: "0px 4px 16px rgba(0,0,0,0.3)",
-                      }}
-                    />
+                    <div style={{ marginTop: "12px" }}>
+                      {(clip.narrClipUrl || clip.subClipUrl) && (
+                        <p style={{ fontSize: "0.68rem", color: "rgba(255,255,255,0.4)", marginBottom: "4px" }} className="font-body">
+                          {clip.narrClipUrl ? "▶ 나레이션 합성본 미리보기" : "▶ 자막 삽입본 미리보기"}
+                        </p>
+                      )}
+                      <video
+                        key={clip.narrClipUrl ?? clip.subClipUrl ?? clip.clipUrl}
+                        src={clip.narrClipUrl ?? clip.subClipUrl ?? clip.clipUrl ?? ""}
+                        controls
+                        style={{
+                          width: "100%",
+                          borderRadius: "16px",
+                          maxHeight: "200px",
+                          boxShadow: "0px 4px 16px rgba(0,0,0,0.3)",
+                        }}
+                      />
+                    </div>
                   )}
                 </div>
               );
