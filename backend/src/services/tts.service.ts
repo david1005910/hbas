@@ -6,17 +6,17 @@ import { getGcpAccessToken } from "../config/vertexai";
 const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const AUDIO_BASE = process.env.AUDIO_STORAGE_PATH || "/app/storage/audio";
 
-// 중년 남성 부드럽고 차분한 한국어 나레이션 목소리
+// 여성 부드럽고 차분한 한국어 나레이션 목소리
 const NARRATION_VOICE = {
   languageCode: "ko-KR",
-  name: "ko-KR-Neural2-C",   // 남성 Neural2 (최고품질)
-  ssmlGender: "MALE",
+  name: "ko-KR-Neural2-A",   // 여성 Neural2 (최고품질)
+  ssmlGender: "FEMALE",
 };
 
 const NARRATION_AUDIO_CONFIG = {
   audioEncoding: "MP3",
-  speakingRate: 0.78,   // 천천히 — 차분한 다큐 나레이션 톤
-  pitch: -1.0,          // 살짝 낮게 — 부드럽고 안정감 있는 음색
+  speakingRate: 0.82,   // 천천히 — 차분한 다큐 나레이션 톤
+  pitch: 0.0,           // 자연스러운 여성 음조
   volumeGainDb: 1.0,
 };
 
