@@ -170,7 +170,7 @@ export async function generateNarrationAudio(req: Request, res: Response, next: 
 ${latestScript.content}
 
 위 내용을 바탕으로 유튜브 다큐멘터리 나레이션 대본을 작성해주세요.
-- 여성 나레이터가 읽는 차분하고 깊이 있는 나레이션 톤
+- 중년 남성 나레이터가 읽는 차분하고 깊이 있는 나레이션 톤
 - 성경 본문의 신학적 의미와 역사적 배경을 상세히 설명
 - 시청자가 장면을 이해할 수 있도록 생생한 묘사 포함
 - 한국어로만 작성, 자막 번호/타임코드 없이 순수 나레이션 텍스트만

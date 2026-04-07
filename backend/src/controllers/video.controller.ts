@@ -306,6 +306,100 @@ export async function addNarrationToClips(req: Request, res: Response, next: Nex
 }
 
 /**
+ * 특정 클립 하나에만 자막 삽입
+ * POST /api/v1/video-clips/:id/burn-subtitle
+ */
+export async function burnSubtitleToSingleClip(req: Request, res: Response, next: NextFunction) {
+  try {
+    const clip = await prisma.sceneVideoClip.findUnique({ where: { id: req.params.id } });
+    if (!clip) return res.status(404).json({ error: "Clip not found" });
+    if (clip.status !== "COMPLETED" || !clip.clipUrl) {
+      return res.status(400).json({ error: "완료된 클립이 아닙니다" });
+    }
+
+    const [srtKoRecord, srtHeRecord] = await Promise.all([
+      prisma.generatedContent.findFirst({
+        where: { episodeId: clip.episodeId, contentType: "SRT_KO" },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.generatedContent.findFirst({
+        where: { episodeId: clip.episodeId, contentType: "SRT_HE" },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+    if (!srtKoRecord) return res.status(400).json({ error: "먼저 SRT_KO를 생성하세요" });
+
+    const koSrt = buildSceneSrt(srtKoRecord.content, clip.sceneNumber, clip.durationSec);
+    if (!koSrt) return res.status(400).json({ error: `씬 ${clip.sceneNumber} SRT 항목 없음` });
+
+    const heSrt = srtHeRecord
+      ? buildSceneSrt(srtHeRecord.content, clip.sceneNumber, clip.durationSec) || undefined
+      : undefined;
+
+    const clipLocalPath = `/app${clip.clipUrl}`;
+    const subOutputPath = path.join(path.dirname(clipLocalPath), `scene_${clip.sceneNumber}_sub.mp4`);
+    const tracks = heSrt ? "KO+HE" : "KO";
+
+    console.log(`[Subtitle] 씬 ${clip.sceneNumber} 자막 삽입 (${tracks})`);
+    await embedSubtitleToClip(clipLocalPath, koSrt, subOutputPath, heSrt);
+
+    const updated = await prisma.sceneVideoClip.update({
+      where: { id: clip.id },
+      data: { subClipUrl: subOutputPath.replace("/app", "") },
+    });
+
+    res.json({ message: `씬 ${clip.sceneNumber} 자막 삽입 완료 (${tracks})`, clip: updated });
+  } catch (err) { next(err); }
+}
+
+/**
+ * 특정 클립 하나에만 나레이션 합성
+ * POST /api/v1/video-clips/:id/add-narration
+ */
+export async function addNarrationToSingleClip(req: Request, res: Response, next: NextFunction) {
+  try {
+    const clip = await prisma.sceneVideoClip.findUnique({ where: { id: req.params.id } });
+    if (!clip) return res.status(404).json({ error: "Clip not found" });
+    if (clip.status !== "COMPLETED" || !clip.clipUrl) {
+      return res.status(400).json({ error: "완료된 클립이 아닙니다" });
+    }
+
+    const episode = await prisma.episode.findUnique({ where: { id: clip.episodeId } });
+    if (!episode?.narrationUrl) return res.status(400).json({ error: "먼저 나레이션을 생성하세요" });
+
+    const narrationLocalPath = `/app${episode.narrationUrl}`;
+    if (!fs.existsSync(narrationLocalPath)) {
+      return res.status(400).json({ error: "나레이션 파일을 찾을 수 없습니다" });
+    }
+
+    // 같은 에피소드의 완료 클립 수로 씬 길이 계산
+    const allClips = await prisma.sceneVideoClip.findMany({
+      where: { episodeId: clip.episodeId, status: "COMPLETED" },
+      orderBy: { sceneNumber: "asc" },
+    });
+    const clipIndex = allClips.findIndex((c) => c.id === clip.id);
+    const totalDuration = getMediaDuration(narrationLocalPath);
+    const segmentDur = totalDuration / allClips.length;
+    const segmentStart = clipIndex * segmentDur;
+
+    const baseClipPath = clip.subClipUrl && fs.existsSync(`/app${clip.subClipUrl}`)
+      ? `/app${clip.subClipUrl}`
+      : `/app${clip.clipUrl}`;
+    const narrOutputPath = path.join(path.dirname(`/app${clip.clipUrl}`), `scene_${clip.sceneNumber}_narr.mp4`);
+
+    console.log(`[Narration] 씬 ${clip.sceneNumber}: ${segmentStart.toFixed(1)}s ~ ${(segmentStart + segmentDur).toFixed(1)}s`);
+    await addNarrationSegmentToClip(baseClipPath, narrationLocalPath, segmentStart, segmentDur, narrOutputPath);
+
+    const updated = await prisma.sceneVideoClip.update({
+      where: { id: clip.id },
+      data: { narrClipUrl: narrOutputPath.replace("/app", "") },
+    });
+
+    res.json({ message: `씬 ${clip.sceneNumber} 나레이션 합성 완료`, clip: updated });
+  } catch (err) { next(err); }
+}
+
+/**
  * 씬 클립의 subClipUrl / narrClipUrl 초기화 (재처리 전 리셋)
  * POST /api/v1/episodes/:id/reset-clips
  */

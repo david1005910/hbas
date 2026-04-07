@@ -19,6 +19,11 @@ const STATUS_ICON: Record<string, React.ReactNode> = {
 
 export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate }: Props) {
   const [clips, setClips] = useState<SceneVideoClip[]>(initialClips);
+
+  // 부모에서 클립 목록이 새로 갱신되면 동기화 (탭 전환 후 재진입 시)
+  useEffect(() => {
+    setClips(initialClips);
+  }, [initialClips]);
   const [isMerging, setIsMerging] = useState(false);
   const [mergeError, setMergeError] = useState("");
   const [mergeResult, setMergeResult] = useState<string | null>(null);
@@ -31,6 +36,7 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
   const [finalOutputUrl, setFinalOutputUrl] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
+  const [clipActionState, setClipActionState] = useState<Record<string, { sub?: boolean; narr?: boolean }>>({});
 
   useEffect(() => {
     const processing = clips.filter((c) => c.status === "PROCESSING");
@@ -47,13 +53,18 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
   }, [clips]);
 
   async function handleStartGeneration(keyframeId: string, sceneNumber: number, motionPrompt?: string) {
-    const clip = await videoClipsApi.start(keyframeId, {
-      confirmed: true,
-      motionPrompt,
-      durationSec: 8,
-    });
-    setClips((prev) => [...prev, clip]);
-    setConfirmScene(null);
+    try {
+      const clip = await videoClipsApi.start(keyframeId, {
+        confirmed: true,
+        motionPrompt,
+        durationSec: 8,
+      });
+      setClips((prev) => [...prev, clip]);
+      setConfirmScene(null);
+    } catch (e: any) {
+      setConfirmScene(null);
+      setActionMsg(`⚠️ 씬 ${sceneNumber} 생성 오류: ${e?.response?.data?.error ?? e.message}`);
+    }
   }
 
   async function handleResetClips() {
@@ -144,6 +155,34 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
       setActionMsg(`⚠️ 나레이션 오류: ${e?.response?.data?.error ?? e.message}`);
     } finally {
       setIsAddingNarration(false);
+    }
+  }
+
+  async function handleBurnSubtitleOne(clipId: string, sceneNumber: number) {
+    setClipActionState((prev) => ({ ...prev, [clipId]: { ...prev[clipId], sub: true } }));
+    setActionMsg("");
+    try {
+      const res = await videoClipsApi.burnSubtitleOne(clipId);
+      setClips((prev) => prev.map((c) => c.id === clipId ? res.clip : c));
+      setActionMsg(`✅ 씬 ${sceneNumber} 자막 삽입 완료`);
+    } catch (e: any) {
+      setActionMsg(`⚠️ 씬 ${sceneNumber} 자막 오류: ${e?.response?.data?.error ?? e.message}`);
+    } finally {
+      setClipActionState((prev) => ({ ...prev, [clipId]: { ...prev[clipId], sub: false } }));
+    }
+  }
+
+  async function handleAddNarrationOne(clipId: string, sceneNumber: number) {
+    setClipActionState((prev) => ({ ...prev, [clipId]: { ...prev[clipId], narr: true } }));
+    setActionMsg("");
+    try {
+      const res = await videoClipsApi.addNarrationOne(clipId);
+      setClips((prev) => prev.map((c) => c.id === clipId ? res.clip : c));
+      setActionMsg(`✅ 씬 ${sceneNumber} 나레이션 합성 완료`);
+    } catch (e: any) {
+      setActionMsg(`⚠️ 씬 ${sceneNumber} 나레이션 오류: ${e?.response?.data?.error ?? e.message}`);
+    } finally {
+      setClipActionState((prev) => ({ ...prev, [clipId]: { ...prev[clipId], narr: false } }));
     }
   }
 
@@ -612,7 +651,7 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                           </button>
                         </div>
                       )}
-                      {!clip && confirmScene !== kf.sceneNumber && (
+                      {(!clip || clip.status === "FAILED") && confirmScene !== kf.sceneNumber && (
                         <button
                           onClick={() => setConfirmScene(kf.sceneNumber)}
                           style={{
@@ -686,6 +725,55 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                       )}
                     </div>
                   </div>
+
+                  {clip?.status === "COMPLETED" && (
+                    <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: "10px" }}>
+                      <button
+                        onClick={() => handleBurnSubtitleOne(clip.id, kf.sceneNumber)}
+                        disabled={!!clipActionState[clip.id]?.sub}
+                        style={{
+                          display: "flex", alignItems: "center", gap: "5px",
+                          padding: "4px 11px", borderRadius: "14px",
+                          background: clip.subClipUrl
+                            ? "rgba(99,102,241,0.35)"
+                            : "rgba(99,102,241,0.18)",
+                          border: `1px solid ${clip.subClipUrl ? "rgba(165,180,252,0.6)" : "rgba(99,102,241,0.3)"}`,
+                          color: clip.subClipUrl ? "#a5b4fc" : "rgba(165,180,252,0.7)",
+                          fontSize: "0.72rem", fontWeight: 500,
+                          cursor: clipActionState[clip.id]?.sub ? "not-allowed" : "pointer",
+                          opacity: clipActionState[clip.id]?.sub ? 0.5 : 1,
+                          transition: "all 0.2s ease",
+                        }}
+                        className="font-body"
+                        title="이 씬에 자막 삽입"
+                      >
+                        <FileText size={11} />
+                        {clipActionState[clip.id]?.sub ? "삽입 중..." : clip.subClipUrl ? "자막 재삽입" : "자막 삽입"}
+                      </button>
+                      <button
+                        onClick={() => handleAddNarrationOne(clip.id, kf.sceneNumber)}
+                        disabled={!!clipActionState[clip.id]?.narr}
+                        style={{
+                          display: "flex", alignItems: "center", gap: "5px",
+                          padding: "4px 11px", borderRadius: "14px",
+                          background: clip.narrClipUrl
+                            ? "rgba(236,72,153,0.35)"
+                            : "rgba(236,72,153,0.18)",
+                          border: `1px solid ${clip.narrClipUrl ? "rgba(249,168,212,0.6)" : "rgba(236,72,153,0.3)"}`,
+                          color: clip.narrClipUrl ? "#f9a8d4" : "rgba(249,168,212,0.7)",
+                          fontSize: "0.72rem", fontWeight: 500,
+                          cursor: clipActionState[clip.id]?.narr ? "not-allowed" : "pointer",
+                          opacity: clipActionState[clip.id]?.narr ? 0.5 : 1,
+                          transition: "all 0.2s ease",
+                        }}
+                        className="font-body"
+                        title="이 씬에 나레이션 합성"
+                      >
+                        <Mic2 size={11} />
+                        {clipActionState[clip.id]?.narr ? "합성 중..." : clip.narrClipUrl ? "나레이션 재합성" : "나레이션 합성"}
+                      </button>
+                    </div>
+                  )}
 
                   {clip?.status === "COMPLETED" && clip.clipUrl && (
                     <video
