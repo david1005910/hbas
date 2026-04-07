@@ -18,9 +18,10 @@ export function getMediaDuration(filePath: string): number {
  * - 폰트 설치 불필요, MP4 내 자막 트랙
  */
 /**
- * 씬별 소프트 자막 트랙 삽입 (한국어 + 히브리어 동시 지원)
- * - koSrtContent: 한국어 SRT (필수)
- * - heSrtContent: 히브리어 SRT (선택, 있으면 두 번째 트랙으로 추가)
+ * 씬별 하드코딩(burned-in) 자막 삽입 — ASS 방식
+ * - 한국어: 하단 중앙 (흰색)
+ * - 히브리어: 한국어 위 (금색, FriBiDi RTL 자동처리)
+ * - libass 필터로 영상 프레임에 직접 렌더링 → 모든 플레이어에서 보임
  */
 export async function embedSubtitleToClip(
   clipPath: string,
@@ -28,50 +29,58 @@ export async function embedSubtitleToClip(
   outputPath: string,
   heSrtContent?: string
 ): Promise<void> {
+  // ASS 파일 생성 (srtParser의 buildSceneAss 로직을 직접 인라인 처리)
   const ts = Date.now();
-  const tmpKo = path.join(os.tmpdir(), `sub_ko_${ts}.srt`);
-  const tmpHe = heSrtContent ? path.join(os.tmpdir(), `sub_he_${ts}.srt`) : null;
+  const tmpAss = path.join(os.tmpdir(), `sub_${ts}.ass`);
 
-  fs.writeFileSync(tmpKo, koSrtContent.replace(/^\uFEFF/, ""), "utf8");
-  if (tmpHe && heSrtContent) {
-    fs.writeFileSync(tmpHe, heSrtContent.replace(/^\uFEFF/, ""), "utf8");
-  }
+  // SRT → 텍스트 추출 (첫 번째 자막 항목의 text)
+  const koText = koSrtContent.split("\n").filter((l) => {
+    const t = l.trim();
+    return t && !/^\d+$/.test(t) && !/^\d{2}:\d{2}:\d{2}/.test(t);
+  }).join(" ").trim();
 
-  const cleanup = () => {
-    if (fs.existsSync(tmpKo)) fs.unlinkSync(tmpKo);
-    if (tmpHe && fs.existsSync(tmpHe)) fs.unlinkSync(tmpHe);
-  };
+  const heText = heSrtContent ? heSrtContent.split("\n").filter((l) => {
+    const t = l.trim();
+    return t && !/^\d+$/.test(t) && !/^\d{2}:\d{2}:\d{2}/.test(t);
+  }).join(" ").trim() : undefined;
+
+  const assContent = [
+    "[Script Info]",
+    "ScriptType: v4.00+",
+    "PlayResX: 1920",
+    "PlayResY: 1080",
+    "WrapStyle: 0",
+    "",
+    "[V4+ Styles]",
+    "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding",
+    "Style: Korean,Noto Sans CJK KR,44,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,30,30,30,1",
+    "Style: Hebrew,Noto Sans,38,&H0000D4FF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,30,30,90,1",
+    "",
+    "[Events]",
+    "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text",
+    `Dialogue: 0,0:00:00.50,0:00:07.50,Korean,,0,0,0,,${koText}`,
+    ...(heText ? [`Dialogue: 0,0:00:00.50,0:00:07.50,Hebrew,,0,0,0,,${heText}`] : []),
+  ].join("\n");
+
+  fs.writeFileSync(tmpAss, assContent, "utf8");
+
+  const cleanup = () => { if (fs.existsSync(tmpAss)) fs.unlinkSync(tmpAss); };
+
+  // ASS 경로의 특수문자(콜론 등) 이스케이프
+  const escapedAss = tmpAss.replace(/\\/g, "/").replace(/:/g, "\\:");
 
   return new Promise((resolve, reject) => {
-    const cmd = ffmpeg()
+    ffmpeg()
       .input(clipPath)
-      .input(tmpKo);
-
-    if (tmpHe) cmd.input(tmpHe);
-
-    const outputOpts = [
-      "-map 0:v:0",
-      "-map 0:a:0?",          // Veo 클립은 오디오 없을 수 있음
-      "-map 1:s:0",           // 한국어 자막 트랙
-    ];
-    if (tmpHe) outputOpts.push("-map 2:s:0");   // 히브리어 자막 트랙
-
-    outputOpts.push(
-      "-c:v copy",
-      "-c:a copy",
-      "-c:s mov_text",
-      "-metadata:s:s:0 language=kor",
-      "-metadata:s:s:0 title=Korean",
-    );
-    if (tmpHe) {
-      outputOpts.push(
-        "-metadata:s:s:1 language=heb",
-        "-metadata:s:s:1 title=Hebrew",
-      );
-    }
-
-    cmd
-      .outputOptions(outputOpts)
+      .outputOptions([
+        `-vf ass=${escapedAss}`,
+        "-map 0:v:0",
+        "-map 0:a:0?",
+        "-c:v libx264",
+        "-preset fast",
+        "-crf 22",
+        "-c:a copy",
+      ])
       .output(outputPath)
       .on("end", () => { cleanup(); resolve(); })
       .on("error", (err) => { cleanup(); reject(err); })

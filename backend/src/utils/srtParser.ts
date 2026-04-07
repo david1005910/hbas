@@ -59,7 +59,6 @@ export function buildSceneSrt(
   clipDurationSec = 8
 ): string {
   const entries = parseSrt(srtContent);
-  // sceneNumber에 해당하는 항목 (index 또는 순서)
   const entry = entries.find((e) => e.index === sceneNumber) ?? entries[sceneNumber - 1];
   if (!entry) return "";
 
@@ -67,4 +66,50 @@ export function buildSceneSrt(
   const end = Math.max(start + 1, clipDurationSec - 0.5);
 
   return `1\n${toTs(start)} --> ${toTs(end)}\n${entry.text}\n`;
+}
+
+/** 초 → ASS 타임코드 "H:MM:SS.cc" */
+function toAssTs(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  const cs = Math.round((sec % 1) * 100);
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  return `${h}:${pad2(m)}:${pad2(s)}.${pad2(cs)}`;
+}
+
+/**
+ * 한국어 + 히브리어 자막을 합쳐 ASS 형식으로 생성
+ * - 한국어: 하단 중앙 (흰색)
+ * - 히브리어: 한국어 위 (금색, RTL 자동 처리)
+ */
+export function buildSceneAss(
+  koText: string,
+  heText: string | undefined,
+  clipDurationSec = 8
+): string {
+  const start = toAssTs(0.5);
+  const end   = toAssTs(Math.max(1.5, clipDurationSec - 0.5));
+
+  const header = `[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
+Style: Korean,Noto Sans CJK KR,44,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,30,30,30,1
+Style: Hebrew,Noto Sans,38,&H0000D4FF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,30,30,90,1
+
+[Events]
+Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text`;
+
+  const lines: string[] = [header];
+  lines.push(`Dialogue: 0,${start},${end},Korean,,0,0,0,,${koText}`);
+  if (heText) {
+    // RTL 마커 + 히브리어 텍스트
+    lines.push(`Dialogue: 0,${start},${end},Hebrew,,0,0,0,,${heText}`);
+  }
+  return lines.join("\n") + "\n";
 }

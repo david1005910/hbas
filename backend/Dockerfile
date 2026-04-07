@@ -1,7 +1,9 @@
 FROM node:20-alpine
 
 # FFmpeg 설치 (클립 병합용)
-RUN apk add --no-cache ffmpeg openssl openssl-dev libc6-compat
+RUN apk add --no-cache ffmpeg openssl openssl-dev libc6-compat \
+    fontconfig font-noto font-noto-cjk font-noto-hebrew \
+ && fc-cache -fv
 
 WORKDIR /app
 COPY package*.json ./
