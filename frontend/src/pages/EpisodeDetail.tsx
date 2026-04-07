@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download } from "lucide-react";
+import { Download, Play } from "lucide-react";
 import { PageWrapper } from "../components/layout/PageWrapper";
 import { PipelineStatus } from "../components/ui/PipelineStatus";
 import { ScriptGenerator } from "../components/generator/ScriptGenerator";
@@ -43,6 +43,9 @@ export function EpisodeDetail() {
     return <div className="p-8 text-parchment/50 font-body">로딩 중...</div>;
   }
 
+  const apiBase = import.meta.env.VITE_API_URL || "http://localhost:4000";
+  const finalVideoUrl = `${apiBase}/storage/videos/${id}/episode_final.mp4`;
+
   const getContent = (type: string) =>
     episode.contents?.find((c) => c.contentType === type);
 
@@ -67,6 +70,76 @@ export function EpisodeDetail() {
       <div className="mb-6">
         <PipelineStatus episode={episode} />
       </div>
+
+      {/* 최종 영상 뷰어 (COMPLETE 상태일 때만) */}
+      {episode.status === "COMPLETE" && (
+        <div
+          style={{
+            marginBottom: "24px",
+            borderRadius: "24px",
+            overflow: "hidden",
+            background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)",
+            border: "1px solid rgba(251,191,36,0.35)",
+            boxShadow: "0 0 40px rgba(251,191,36,0.12), 0 8px 32px rgba(0,0,0,0.5)",
+          }}
+        >
+          {/* 헤더 */}
+          <div style={{
+            padding: "16px 20px",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            borderBottom: "1px solid rgba(251,191,36,0.2)",
+            background: "rgba(251,191,36,0.06)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div style={{
+                width: "32px", height: "32px", borderRadius: "50%",
+                background: "linear-gradient(135deg, #f59e0b, #ef4444)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <Play size={14} fill="white" color="white" />
+              </div>
+              <div>
+                <p style={{ color: "#fbbf24", fontWeight: 700, fontSize: "0.95rem", margin: 0 }} className="font-body">
+                  🎬 최종 완성 영상
+                </p>
+                <p style={{ color: "rgba(251,191,36,0.55)", fontSize: "0.72rem", margin: 0 }} className="font-body">
+                  자막 · 나레이션 · 그레고리안 성가 BGM 포함
+                </p>
+              </div>
+            </div>
+            <a
+              href={finalVideoUrl}
+              download="episode_final.mp4"
+              style={{
+                display: "flex", alignItems: "center", gap: "7px",
+                padding: "8px 18px", borderRadius: "20px",
+                background: "linear-gradient(135deg, rgba(251,191,36,0.3) 0%, rgba(239,68,68,0.25) 100%)",
+                border: "1px solid rgba(251,191,36,0.5)",
+                color: "#fbbf24", fontWeight: 700, fontSize: "0.85rem",
+                textDecoration: "none",
+                boxShadow: "0 4px 16px rgba(251,191,36,0.2)",
+                transition: "all 0.2s ease",
+              }}
+              className="font-body"
+            >
+              <Download size={14} />
+              MP4 다운로드
+            </a>
+          </div>
+
+          {/* 비디오 플레이어 */}
+          <video
+            src={finalVideoUrl}
+            controls
+            style={{
+              width: "100%",
+              maxHeight: "480px",
+              display: "block",
+              background: "#000",
+            }}
+          />
+        </div>
+      )}
 
       {/* 탭 바 */}
       <div className="flex gap-1 mb-6 border-b border-gold/20 pb-0">
