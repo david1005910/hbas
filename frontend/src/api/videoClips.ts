@@ -16,6 +16,8 @@ export const videoClipsApi = {
     api.post(`/episodes/${episodeId}/add-narration-to-clips`).then((r) => r.data),
   delete: (clipId: string) =>
     api.delete(`/video-clips/${clipId}`).then((r) => r.data),
-  produceFinalUrl: (episodeId: string) =>
-    `${import.meta.env.VITE_API_URL}/api/v1/episodes/${episodeId}/produce-final`,
+  produceFinalUrl: (episodeId: string) => {
+    const base = import.meta.env.VITE_API_URL || "";
+    return `${base}/api/v1/episodes/${episodeId}/produce-final`;
+  },
 };

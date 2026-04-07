@@ -6,5 +6,5 @@ router.get("/:id/video-clips", listVideoClips);
 router.post("/:id/merge-clips", mergeClips);
 router.post("/:id/burn-subtitles", burnSubtitlesToClips);
 router.post("/:id/add-narration-to-clips", addNarrationToClips);
-router.post("/:id/produce-final", produceFinal);
+router.get("/:id/produce-final", produceFinal);
 export default router;
