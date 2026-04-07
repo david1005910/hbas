@@ -1,0 +1,121 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id          String    @id @default(uuid())
+  name        String    @db.VarChar(200)
+  description String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  episodes    Episode[]
+
+  @@map("projects")
+}
+
+model BibleBook {
+  id            Int       @id @default(autoincrement())
+  nameKo        String    @db.VarChar(100)
+  nameHe        String    @db.VarChar(100)
+  nameEn        String    @db.VarChar(100)
+  orderNo       Int       @unique
+  totalChapters Int
+  episodes      Episode[]
+
+  @@map("bible_books")
+}
+
+model Episode {
+  id             String             @id @default(uuid())
+  projectId      String
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  bibleBookId    Int
+  bibleBook      BibleBook          @relation(fields: [bibleBookId], references: [id])
+  titleKo        String             @db.VarChar(300)
+  titleHe        String?            @db.VarChar(300)
+  verseRange     String?            @db.VarChar(100)
+  sceneCount     Int                @default(5)
+  animStyle      String?            @db.VarChar(100)
+  targetDuration Int                @default(300)
+  status         EpisodeStatus      @default(DRAFT)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  contents       GeneratedContent[]
+  keyframes      SceneKeyframe[]
+  videoClips     SceneVideoClip[]
+
+  @@map("episodes")
+}
+
+enum EpisodeStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETE
+}
+
+model GeneratedContent {
+  id          String      @id @default(uuid())
+  episodeId   String
+  episode     Episode     @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  contentType ContentType
+  content     String      @db.Text
+  version     Int         @default(1)
+  aiModel     String?     @db.VarChar(100)
+  createdAt   DateTime    @default(now())
+
+  @@map("generated_contents")
+}
+
+enum ContentType {
+  SCRIPT
+  ANIM_PROMPT
+  SRT_KO
+  SRT_HE
+  SRT_EN
+  YT_META
+}
+
+model SceneKeyframe {
+  id           String           @id @default(uuid())
+  episodeId    String
+  episode      Episode          @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  sceneNumber  Int
+  promptUsed   String?          @db.Text
+  imageUrl     String?          @db.VarChar(500)
+  resolution   String           @default("1920x1080") @db.VarChar(20)
+  isSelected   Boolean          @default(false)
+  nbModel      String?          @db.VarChar(100)
+  createdAt    DateTime         @default(now())
+  videoClips   SceneVideoClip[]
+
+  @@map("scene_keyframes")
+}
+
+model SceneVideoClip {
+  id          String          @id @default(uuid())
+  keyframeId  String
+  keyframe    SceneKeyframe   @relation(fields: [keyframeId], references: [id], onDelete: Cascade)
+  episodeId   String
+  episode     Episode         @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  sceneNumber Int
+  veoJobId    String?         @db.VarChar(200)
+  status      VideoClipStatus @default(PENDING)
+  clipUrl     String?         @db.VarChar(500)
+  durationSec Int             @default(4)
+  createdAt   DateTime        @default(now())
+
+  @@map("scene_video_clips")
+}
+
+enum VideoClipStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}

@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-ink: #0a0705;
+  --color-ink-light: #1a1209;
+  --color-gold: #d4af37;
+  --color-parchment: #e8d5a3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--color-ink);
+  color: var(--color-parchment);
+  font-family: "Crimson Text", serif;
+  margin: 0;
+}
+
+/* 성경 테마 스크롤바 */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--color-ink); }
+::-webkit-scrollbar-thumb { background: var(--color-gold); opacity: 0.3; border-radius: 3px; }
+
+/* Tailwind bg-ink-light 유틸리티 */
+.bg-ink-light { background-color: var(--color-ink-light); }
