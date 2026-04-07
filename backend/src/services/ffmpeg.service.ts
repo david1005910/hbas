@@ -14,11 +14,6 @@ export function getMediaDuration(filePath: string): number {
 }
 
 /**
- * 씬별 소프트 자막 트랙 삽입
- * - SRT 텍스트를 임시 파일로 저장 후 mov_text 스트림으로 삽입
- * - 폰트 설치 불필요, MP4 내 자막 트랙
- */
-/**
  * 씬별 하드코딩(burned-in) 자막 삽입 — ASS 방식
  * - 한국어: 하단 중앙 (흰색)
  * - 히브리어: 한국어 위 (금색, FriBiDi RTL 자동처리)

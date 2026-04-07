@@ -193,7 +193,7 @@ export function EpisodeDetail() {
         {activeTab === "narration" && (
           <NarrationGenerator
             episodeId={id!}
-            initialNarrationUrl={(episode as any).narrationUrl}
+            initialNarrationUrl={episode.narrationUrl}
             onDone={refresh}
           />
         )}

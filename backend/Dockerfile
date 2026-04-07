@@ -13,5 +13,5 @@ COPY . .
 RUN npx prisma generate
 
 EXPOSE 4000
-# 시작 시 Prisma 클라이언트 재생성 보장
-CMD ["sh", "-c", "npx prisma generate && npm run dev"]
+# 시작 시: 스키마 → DB 동기화(db push) + 클라이언트 재생성 + 서버 기동
+CMD ["sh", "-c", "npx prisma generate && npx prisma db push --accept-data-loss && npm run dev"]
