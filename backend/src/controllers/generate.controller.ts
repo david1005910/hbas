@@ -154,14 +154,14 @@ export async function generateNarrationAudio(req: Request, res: Response, next: 
     const episode = await getEpisodeOrFail(req.params.id, res);
     if (!episode) return;
 
-    const latestScript = await prisma.generatedContent.findFirst({
-      where: { episodeId: episode.id, contentType: "SCRIPT" },
+    const latestSrtKo = await prisma.generatedContent.findFirst({
+      where: { episodeId: episode.id, contentType: "SRT_KO" },
       orderBy: { createdAt: "desc" },
     });
-    if (!latestScript) return res.status(400).json({ error: "먼저 스크립트를 생성하세요" });
+    if (!latestSrtKo) return res.status(400).json({ error: "먼저 자막(SRT_KO)을 생성하세요" });
 
-    console.log(`[Narration] 나레이션 생성 시작, episodeId=${episode.id}`);
-    const filePath = await generateNarration(episode.id, latestScript.content);
+    console.log(`[Narration] 나레이션 생성 시작 (SRT_KO 기반), episodeId=${episode.id}`);
+    const filePath = await generateNarration(episode.id, latestSrtKo.content);
     const narrationUrl = filePath.replace("/app", "");
 
     await prisma.episode.update({

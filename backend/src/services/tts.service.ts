@@ -20,30 +20,50 @@ const NARRATION_AUDIO_CONFIG = {
   volumeGainDb: 1.0,
 };
 
+/**
+ * SRT 형식에서 자막 텍스트만 추출
+ * - 숫자 인덱스 줄 (1, 2, 3 ...) 제거
+ * - 타임코드 줄 (00:00:00,000 --> 00:00:10,000) 제거
+ * - 빈 줄 정리 후 자막 텍스트만 반환
+ */
+function extractSrtText(srtContent: string): string {
+  return srtContent
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (trimmed === "") return false;
+      // 순수 숫자 인덱스 줄 제거 (1, 2, 10, 100 등)
+      if (/^\d+$/.test(trimmed)) return false;
+      // 타임코드 줄 제거 (00:00:00,000 --> 00:00:10,000)
+      if (/^\d{2}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2}:\d{2}:\d{2},\d{3}$/.test(trimmed)) return false;
+      return true;
+    })
+    .join(" ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export async function generateNarration(
   episodeId: string,
-  scriptText: string
+  srtText: string
 ): Promise<string> {
   const token = await getGcpAccessToken();
 
-  // Google TTS 단건 한도: 5000 bytes (한글 3바이트/자 → 최대 ~1600자)
-  // 안전하게 1500자로 제한, 바이트 초과 시 청크 분할
-  const cleaned = scriptText
-    .replace(/[#*`>\[\]]/g, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  // SRT → 순수 자막 텍스트 추출 (숫자·타임코드 제거)
+  const extracted = extractSrtText(srtText);
 
+  // Google TTS 단건 한도: 5000 bytes (한글 3바이트/자)
   // 바이트 기준으로 4800 bytes까지만 사용
   let cleanedText = "";
   let byteCount = 0;
-  for (const char of cleaned) {
+  for (const char of extracted) {
     const charBytes = Buffer.byteLength(char, "utf8");
     if (byteCount + charBytes > 4800) break;
     cleanedText += char;
     byteCount += charBytes;
   }
 
-  console.log(`[TTS] 나레이션 생성 시작, episodeId=${episodeId}, 텍스트길이=${cleanedText.length}`);
+  console.log(`[TTS] 나레이션 생성 (SRT_KO 기반), episodeId=${episodeId}, 추출텍스트=${cleanedText.length}자`);
 
   let response;
   try {
