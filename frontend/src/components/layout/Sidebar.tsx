@@ -15,9 +15,14 @@ export function Sidebar() {
       <div className="p-5 border-b border-gold/20">
         <div className="flex items-center gap-2">
           <Film className="text-gold" size={22} />
-          <span className="font-display text-gold text-sm leading-tight">
-            Hebrew Bible<br />Animation Studio
-          </span>
+          <div>
+            <span className="font-display text-gold text-sm leading-tight">
+              Hebrew Bible<br />Animation Studio
+            </span>
+            <p className="text-parchment/40 font-body mt-0.5" style={{ fontSize: "0.65rem" }}>
+              by David HS Kim
+            </p>
+          </div>
         </div>
       </div>
       <nav className="flex-1 p-3 space-y-1">
