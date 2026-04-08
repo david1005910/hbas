@@ -6,17 +6,16 @@ import { getGcpAccessToken } from "../config/vertexai";
 const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const AUDIO_BASE = process.env.AUDIO_STORAGE_PATH || "/app/storage/audio";
 
-// 중후한 저음 남성 나레이션 목소리 (성경 다큐 스타일)
+// 성경 다큐 나레이션 목소리 — Chirp3-HD Iapetus (Gemini 최신 TTS)
 const NARRATION_VOICE = {
   languageCode: "ko-KR",
-  name: "ko-KR-Neural2-C",   // 남성 Neural2-C (최고품질 남성)
+  name: "ko-KR-Chirp3-HD-Iapetus",
   ssmlGender: "MALE",
 };
 
 const NARRATION_AUDIO_CONFIG = {
   audioEncoding: "MP3",
-  speakingRate: 0.78,   // 천천히, 무게감 있는 나레이션
-  pitch: -4.0,          // 깊게 낮춘 저음 — 웅장한 다큐 남성 목소리
+  speakingRate: 0.82,   // Chirp3-HD는 pitch 미지원 — 속도로 무게감 조절
   volumeGainDb: 1.5,
 };
 
