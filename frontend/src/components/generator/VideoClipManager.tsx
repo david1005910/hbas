@@ -51,13 +51,20 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
   const [clipActionState, setClipActionState] = useState<Record<string, { sub?: boolean; narr?: boolean }>>({});
 
   useEffect(() => {
+    // clips 변경 시마다 현재 PROCESSING 목록으로 갱신된 interval 재생성
     const processing = clips.filter((c) => c.status === "PROCESSING");
     if (processing.length === 0) return;
 
     const interval = setInterval(async () => {
+      // 최신 clips state가 아닌 effect 시점의 processing 목록을 사용하므로
+      // setState 콜백으로 최신 prev를 사용해 안전하게 업데이트
       for (const clip of processing) {
-        const updated = await videoClipsApi.status(clip.id);
-        setClips((prev) => prev.map((c) => c.id === updated.id ? updated : c));
+        try {
+          const updated = await videoClipsApi.status(clip.id);
+          setClips((prev) => prev.map((c) => c.id === updated.id ? updated : c));
+        } catch {
+          // 폴링 오류는 무시 (다음 interval에 재시도)
+        }
       }
     }, 30000);
 
@@ -264,6 +271,7 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
   }
 
   const [mergingScene, setMergingScene] = useState<number | null>(null);
+  // 자동 병합이 이미 실행됐거나 진행 중인 씬 번호 추적 (중복 방지)
   const autoMergedScenes = useRef<Set<number>>(new Set());
 
   async function handleMergeScene(sceneNo: number) {
@@ -272,10 +280,13 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
     try {
       const res = await videoClipsApi.mergeScene(episodeId, sceneNo);
       setActionMsg(`✅ 씬 ${sceneNo} 병합 완료 (${res.totalDurationSec}초)`);
+      // 병합 후 서버에서 최신 클립 목록 재조회 (병합된 단일 클립으로 갱신)
       const updated = await videoClipsApi.list(episodeId);
       setClips(updated);
       onUpdate?.();
     } catch (e: any) {
+      // 자동 병합 실패 시 Set에서 제거 → 재시도 가능
+      autoMergedScenes.current.delete(sceneNo);
       setActionMsg(`⚠️ 씬 ${sceneNo} 병합 실패: ${e?.response?.data?.error ?? e.message}`);
     } finally {
       setMergingScene(null);
@@ -284,28 +295,27 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
 
   const selectedKeyframes = keyframes.filter((k) => k.isSelected);
   const completedCount = clips.filter((c) => c.status === "COMPLETED").length;
-  // 씬별로 완료 클립 수 집계
+  // 씬별 완료 클립 수 집계
   const sceneClipCount = clips.reduce<Record<number, number>>((acc, c) => {
     if (c.status === "COMPLETED") acc[c.sceneNumber] = (acc[c.sceneNumber] ?? 0) + 1;
     return acc;
   }, {});
-  // 씬별 진행 중 클립 수 집계
-  const sceneProcessingCount = clips.reduce<Record<number, number>>((acc, c) => {
-    if (c.status === "PROCESSING") acc[c.sceneNumber] = (acc[c.sceneNumber] ?? 0) + 1;
-    return acc;
-  }, {});
 
   // 씬의 완료 클립이 CLIPS_PER_SCENE개 되면 자동 병합
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // deps: clips — 클립 상태 변경(PROCESSING→COMPLETED) 시마다 체크
   useEffect(() => {
-    for (const [sceneNo, count] of Object.entries(sceneClipCount)) {
-      const n = parseInt(sceneNo, 10);
-      if (count >= CLIPS_PER_SCENE && !autoMergedScenes.current.has(n) && mergingScene !== n) {
-        autoMergedScenes.current.add(n);
-        handleMergeScene(n);
+    for (const clip of clips) {
+      if (clip.status !== "COMPLETED") continue;
+      const sceneNo = clip.sceneNumber;
+      const count = clips.filter((c) => c.sceneNumber === sceneNo && c.status === "COMPLETED").length;
+      if (count >= CLIPS_PER_SCENE && !autoMergedScenes.current.has(sceneNo) && mergingScene !== sceneNo) {
+        autoMergedScenes.current.add(sceneNo);
+        handleMergeScene(sceneNo);
       }
     }
-  }, [sceneClipCount]); // eslint-disable-line react-hooks/exhaustive-deps
+  // handleMergeScene은 렌더마다 재생성되지만 deps에 넣으면 무한루프 위험 → clips만 명시
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clips]);
 
   return (
     <div
@@ -963,8 +973,8 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                         )
                       ) : null}
 
-                      {/* 수동 병합 버튼 (자동 병합 전, 2개 이상 완료 시) */}
-                      {!allDone && completed.length >= 2 && !isAutoMerging && (
+                      {/* 수동 병합 버튼 (2개 이상 완료, 자동 병합 대기/실패 시) */}
+                      {completed.length >= 2 && !isAutoMerging && !autoMergedScenes.current.has(kf.sceneNumber) && (
                         <button
                           onClick={() => handleMergeScene(kf.sceneNumber)}
                           style={{
@@ -978,7 +988,7 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                           className="font-body"
                         >
                           <Film size={12} />
-                          지금 병합 ({completed.length}개)
+                          {allDone ? `자동 병합 (${completed.length}개)` : `지금 병합 (${completed.length}개)`}
                         </button>
                       )}
                     </div>
