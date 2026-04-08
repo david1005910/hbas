@@ -102,18 +102,18 @@ function splitTextIntoChunks(text: string, chunks: number): string[] {
  * - 한국어: 하단 중앙 (흰색)
  * - 히브리어: 한국어 위 (금색, RTL 자동 처리)
  */
-const SUBTITLE_CHUNKS = 6; // 씬당 자막을 몇 등분으로 나눌지
+const CHUNK_SEC = 3; // 자막 한 청크를 화면에 표시하는 시간(초)
 
 export function buildSceneAss(
   koText: string,
   heText: string | undefined,
   clipDurationSec = 8
 ): string {
-  const usable = Math.max(0.5, clipDurationSec - 0.5);
-  const chunkDur = usable / SUBTITLE_CHUNKS;
+  const usable = Math.max(CHUNK_SEC, clipDurationSec - 0.5);
+  const numChunks = Math.max(1, Math.ceil(usable / CHUNK_SEC));
 
-  const koChunks = splitTextIntoChunks(koText, SUBTITLE_CHUNKS);
-  const heChunks = heText ? splitTextIntoChunks(heText, SUBTITLE_CHUNKS) : null;
+  const koChunks = splitTextIntoChunks(koText, numChunks);
+  const heChunks = heText ? splitTextIntoChunks(heText, numChunks) : null;
 
   const header = `[Script Info]
 ScriptType: v4.00+
@@ -131,9 +131,11 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text`;
 
   const dialogues: string[] = [header];
 
-  for (let i = 0; i < SUBTITLE_CHUNKS; i++) {
-    const s = toAssTs(0.5 + i * chunkDur);
-    const e = toAssTs(0.5 + (i + 1) * chunkDur);
+  for (let i = 0; i < numChunks; i++) {
+    const chunkStart = 0.5 + i * CHUNK_SEC;
+    const chunkEnd   = Math.min(chunkStart + CHUNK_SEC, clipDurationSec - 0.1);
+    const s = toAssTs(chunkStart);
+    const e = toAssTs(chunkEnd);
     const ko = koChunks[i];
     const he = heChunks ? heChunks[i] : null;
 

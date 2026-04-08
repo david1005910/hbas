@@ -26,4 +26,6 @@ export const videoClipsApi = {
   },
   resetClips: (episodeId: string) =>
     api.post(`/episodes/${episodeId}/reset-clips`).then((r) => r.data),
+  mergeScene: (episodeId: string, sceneNo: number) =>
+    api.post(`/episodes/${episodeId}/merge-scene/${sceneNo}`).then((r) => r.data),
 };

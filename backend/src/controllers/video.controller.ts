@@ -522,6 +522,87 @@ export async function resetClipProcessing(req: Request, res: Response, next: Nex
 }
 
 /**
+ * 씬 N의 완료된 클립(여러 개)을 하나로 이어 붙여 씬 단일 클립 생성
+ * POST /api/v1/episodes/:id/merge-scene/:sceneNo
+ *
+ * 동작:
+ *   1. 해당 씬의 COMPLETED 클립을 createdAt 순으로 조회
+ *   2. narrClipUrl → subClipUrl → clipUrl 우선순위로 최선 버전 선택
+ *   3. FFmpeg concat 으로 하나의 scene_N_scene.mp4 생성
+ *   4. 가장 오래된 클립 레코드의 clipUrl 을 업데이트 (대표 레코드 유지)
+ *   5. 나머지 클립 레코드는 DB 에서 제거
+ */
+export async function mergeSceneClips(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id: episodeId, sceneNo } = req.params;
+    const sceneNumber = parseInt(sceneNo, 10);
+    if (isNaN(sceneNumber)) return res.status(400).json({ error: "sceneNo 는 숫자여야 합니다" });
+
+    const clips = await prisma.sceneVideoClip.findMany({
+      where: { episodeId, sceneNumber, status: "COMPLETED" },
+      orderBy: { createdAt: "asc" },
+    });
+
+    if (clips.length === 0) return res.status(400).json({ error: `씬 ${sceneNumber}에 완료된 클립이 없습니다` });
+    if (clips.length === 1) {
+      return res.json({
+        message: `씬 ${sceneNumber}: 클립 1개 — 병합 불필요`,
+        clip: clips[0],
+        totalDurationSec: clips[0].durationSec,
+      });
+    }
+
+    // 각 클립의 최선 파일 경로 선택
+    const sourcePaths: string[] = [];
+    for (const c of clips) {
+      let p = "";
+      if (c.narrClipUrl && fs.existsSync(`/app${c.narrClipUrl}`)) p = `/app${c.narrClipUrl}`;
+      else if (c.subClipUrl && fs.existsSync(`/app${c.subClipUrl}`)) p = `/app${c.subClipUrl}`;
+      else if (c.clipUrl && fs.existsSync(`/app${c.clipUrl}`)) p = `/app${c.clipUrl}`;
+      else continue; // 파일 없으면 건너뜀
+      sourcePaths.push(p);
+    }
+
+    if (sourcePaths.length === 0) return res.status(400).json({ error: "병합 가능한 파일이 없습니다" });
+
+    // 출력 파일 경로: 첫 번째 클립과 같은 디렉터리에 저장
+    const baseDir = path.dirname(`/app${clips[0].clipUrl}`);
+    const outPath = path.join(baseDir, `scene_${String(sceneNumber).padStart(2, "0")}_merged.mp4`);
+
+    console.log(`[MergeScene] 씬 ${sceneNumber}: ${sourcePaths.length}개 클립 병합 → ${outPath}`);
+    await mergeVideoClips(sourcePaths, outPath);
+
+    const totalDuration = sourcePaths.length; // 각 클립 8초 가정 — ffprobe로 정확히 계산
+    const outRelPath = outPath.replace("/app", "");
+
+    // 대표 레코드(첫 번째) 업데이트, 나머지 삭제
+    const [representative, ...rest] = clips;
+    await prisma.sceneVideoClip.update({
+      where: { id: representative.id },
+      data: {
+        clipUrl: outRelPath,
+        subClipUrl: null,
+        narrClipUrl: null,
+        durationSec: sourcePaths.length * 8, // 대략적인 총 길이
+      },
+    });
+    if (rest.length > 0) {
+      await prisma.sceneVideoClip.deleteMany({ where: { id: { in: rest.map((c) => c.id) } } });
+    }
+
+    const updated = await prisma.sceneVideoClip.findUnique({ where: { id: representative.id } });
+    console.log(`[MergeScene] 씬 ${sceneNumber} 병합 완료: ${sourcePaths.length}개 → ${outRelPath}`);
+
+    res.json({
+      message: `씬 ${sceneNumber}: ${sourcePaths.length}개 클립 → 1개 병합 완료`,
+      clip: updated,
+      totalDurationSec: sourcePaths.length * 8,
+      mergedPath: outRelPath,
+    });
+  } catch (err) { next(err); }
+}
+
+/**
  * 자막 삽입 → 나레이션 합성 → 최종 병합(+BGM)을 한 번에 실행
  * POST /api/v1/episodes/:id/produce-final  (SSE 스트림)
  */

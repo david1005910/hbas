@@ -212,8 +212,31 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
     }
   }
 
+  const [mergingScene, setMergingScene] = useState<number | null>(null);
+
+  async function handleMergeScene(sceneNo: number) {
+    setMergingScene(sceneNo);
+    setActionMsg("");
+    try {
+      const res = await videoClipsApi.mergeScene(episodeId, sceneNo);
+      setActionMsg(`✅ 씬 ${sceneNo} 병합 완료 (${res.totalDurationSec}초)`);
+      const updated = await videoClipsApi.list(episodeId);
+      setClips(updated);
+      onUpdate?.();
+    } catch (e: any) {
+      setActionMsg(`⚠️ 씬 ${sceneNo} 병합 실패: ${e?.response?.data?.error ?? e.message}`);
+    } finally {
+      setMergingScene(null);
+    }
+  }
+
   const selectedKeyframes = keyframes.filter((k) => k.isSelected);
   const completedCount = clips.filter((c) => c.status === "COMPLETED").length;
+  // 씬별로 완료 클립 수 집계
+  const sceneClipCount = clips.reduce<Record<number, number>>((acc, c) => {
+    if (c.status === "COMPLETED") acc[c.sceneNumber] = (acc[c.sceneNumber] ?? 0) + 1;
+    return acc;
+  }, {});
 
   return (
     <div
@@ -736,6 +759,33 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                       )}
                     </div>
                   </div>
+
+                  {/* 씬 병합 버튼 — 완료 클립이 2개 이상일 때 */}
+                  {(sceneClipCount[kf.sceneNumber] ?? 0) >= 2 && (
+                    <div style={{ marginTop: "8px" }}>
+                      <button
+                        onClick={() => handleMergeScene(kf.sceneNumber)}
+                        disabled={mergingScene === kf.sceneNumber}
+                        style={{
+                          display: "flex", alignItems: "center", gap: "5px",
+                          padding: "5px 14px", borderRadius: "14px",
+                          background: "rgba(251,191,36,0.22)",
+                          border: "1px solid rgba(251,191,36,0.5)",
+                          color: "#fbbf24",
+                          fontSize: "0.73rem", fontWeight: 600,
+                          cursor: mergingScene === kf.sceneNumber ? "not-allowed" : "pointer",
+                          opacity: mergingScene === kf.sceneNumber ? 0.5 : 1,
+                        }}
+                        className="font-body"
+                        title={`씬 ${kf.sceneNumber}의 ${sceneClipCount[kf.sceneNumber]}개 클립을 하나로 병합`}
+                      >
+                        <Film size={12} />
+                        {mergingScene === kf.sceneNumber
+                          ? "병합 중..."
+                          : `씬 병합 (${sceneClipCount[kf.sceneNumber]}개 × 8s)`}
+                      </button>
+                    </div>
+                  )}
 
                   {clip?.status === "COMPLETED" && (
                     <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: "10px" }}>
