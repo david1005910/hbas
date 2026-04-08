@@ -8,6 +8,7 @@ import videoEpisodeRouter from "./videoEpisode.route";
 import videoClipRouter from "./videoClip.route";
 import downloadRouter from "./download.route";
 import bibleRouter from "./bible.route";
+import bgmRouter from "./bgm.route";
 
 const router = Router();
 
@@ -20,6 +21,7 @@ router.use("/video-clips", videoClipRouter);       // /video-clips/:id/status
 router.use("/episodes", videoEpisodeRouter);       // /episodes/:id/video-clips, /episodes/:id/merge-clips
 router.use("/contents", downloadRouter);
 router.use("/bible", bibleRouter);
+router.use("/episodes", bgmRouter);   // /episodes/:id/bgm
 
 router.get("/health", (_req, res) => res.json({ status: "ok" }));
 

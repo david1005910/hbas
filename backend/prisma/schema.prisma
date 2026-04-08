@@ -62,6 +62,7 @@ model Episode {
   targetDuration Int                @default(300)
   status         EpisodeStatus      @default(DRAFT)
   narrationUrl   String?            @db.VarChar(500)
+  bgmUrl         String?            @db.VarChar(500)  // 에피소드별 커스텀 BGM
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
   contents       GeneratedContent[]

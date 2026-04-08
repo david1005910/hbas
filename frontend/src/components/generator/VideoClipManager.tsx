@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
-import { Play, RefreshCw, Film, CheckCircle, XCircle, Clock, FileText, Mic2, Trash2, RotateCcw } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Play, RefreshCw, Film, CheckCircle, XCircle, Clock, FileText, Mic2, Trash2, RotateCcw, Music, Upload, Volume2, X } from "lucide-react";
 import { videoClipsApi } from "../../api/videoClips";
+import { bgmApi } from "../../api/bgm";
 import type { SceneKeyframe, SceneVideoClip } from "../../types";
 
 interface Props {
@@ -100,7 +101,7 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
     setFinalOutputUrl(null);
     setMergeError("");
 
-    const url = videoClipsApi.produceFinalUrl(episodeId);
+    const url = `${videoClipsApi.produceFinalUrl(episodeId)}?bgmVolume=${(bgmVolume / 100).toFixed(2)}`;
     const es = new EventSource(url);
 
     es.onmessage = (e) => {
@@ -202,13 +203,49 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
     setMergeError("");
     setMergeResult(null);
     try {
-      const res = await videoClipsApi.merge(episodeId);
+      const res = await videoClipsApi.merge(episodeId, bgmVolume / 100);
       setMergeResult(res.outputPath ?? "완료");
       onUpdate?.();
     } catch (e: any) {
       setMergeError(e?.response?.data?.error ?? e.message ?? "병합 실패");
     } finally {
       setIsMerging(false);
+    }
+  }
+
+  const [bgmInfo, setBgmInfo] = useState<{ bgmUrl: string | null; isCustom: boolean; activeFileExists: boolean; activeFileSizeKb: number | null } | null>(null);
+  const [bgmVolume, setBgmVolume] = useState(10); // 0~100 (%)
+  const [bgmUploading, setBgmUploading] = useState(false);
+  const [bgmMsg, setBgmMsg] = useState("");
+  const bgmInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    bgmApi.info(episodeId).then(setBgmInfo).catch(() => {});
+  }, [episodeId]);
+
+  async function handleBgmUpload(file: File) {
+    setBgmUploading(true);
+    setBgmMsg("");
+    try {
+      const res = await bgmApi.upload(episodeId, file);
+      setBgmMsg(`✅ ${res.filename} (${res.sizeKb}KB) 업로드 완료`);
+      const info = await bgmApi.info(episodeId);
+      setBgmInfo(info);
+    } catch (e: any) {
+      setBgmMsg(`⚠️ ${e?.response?.data?.error ?? e.message}`);
+    } finally {
+      setBgmUploading(false);
+    }
+  }
+
+  async function handleBgmDelete() {
+    try {
+      await bgmApi.delete(episodeId);
+      setBgmMsg("🔄 기본 그레고리안 성가로 되돌림");
+      const info = await bgmApi.info(episodeId);
+      setBgmInfo(info);
+    } catch (e: any) {
+      setBgmMsg(`⚠️ ${e?.response?.data?.error ?? e.message}`);
     }
   }
 
@@ -358,6 +395,116 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                 <Film size={14} />
                 {isMerging ? "병합 중..." : "전체 클립 병합"}
               </button>
+            )}
+          </div>
+
+          {/* ── BGM 업로드 + 음량 조절 패널 ── */}
+          <div style={{
+            borderRadius: "20px", padding: "16px 18px",
+            background: "linear-gradient(135deg, rgba(139,92,246,0.22) 0%, rgba(217,70,239,0.15) 100%)",
+            border: "1px solid rgba(139,92,246,0.4)",
+          }}>
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-2">
+                <Music size={16} style={{ color: "#c084fc" }} />
+                <div>
+                  <p style={{ color: "#c084fc", fontWeight: 700, fontSize: "0.88rem", margin: 0 }} className="font-body">
+                    배경음악 (BGM)
+                  </p>
+                  <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.72rem", marginTop: "1px" }} className="font-body">
+                    {bgmInfo?.isCustom
+                      ? `커스텀 BGM (${bgmInfo.activeFileSizeKb ?? "?"}KB)`
+                      : "기본: 그레고리안 성가"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* BGM 삭제 (커스텀일 때만) */}
+                {bgmInfo?.isCustom && (
+                  <button
+                    onClick={handleBgmDelete}
+                    title="기본 BGM으로 되돌림"
+                    style={{
+                      display: "flex", alignItems: "center", gap: "4px",
+                      padding: "5px 10px", borderRadius: "12px",
+                      background: "rgba(239,68,68,0.2)", border: "1px solid rgba(239,68,68,0.4)",
+                      color: "#fca5a5", fontSize: "0.72rem", cursor: "pointer",
+                    }}
+                    className="font-body"
+                  >
+                    <X size={11} /> 삭제
+                  </button>
+                )}
+                {/* BGM 업로드 버튼 */}
+                <input
+                  ref={bgmInputRef}
+                  type="file"
+                  accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/aac,audio/flac,.mp3,.wav,.ogg,.aac,.flac,.m4a"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleBgmUpload(file);
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  onClick={() => bgmInputRef.current?.click()}
+                  disabled={bgmUploading}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "6px",
+                    padding: "7px 16px", borderRadius: "14px",
+                    background: bgmUploading ? "rgba(139,92,246,0.15)" : "rgba(139,92,246,0.35)",
+                    border: "1px solid rgba(139,92,246,0.6)",
+                    color: "#c084fc", fontWeight: 600, fontSize: "0.8rem",
+                    cursor: bgmUploading ? "not-allowed" : "pointer",
+                    opacity: bgmUploading ? 0.6 : 1,
+                    transition: "all 0.2s",
+                  }}
+                  className="font-body"
+                >
+                  <Upload size={13} />
+                  {bgmUploading ? "업로드 중..." : "파일 선택"}
+                </button>
+              </div>
+            </div>
+
+            {/* 음량 슬라이더 */}
+            <div style={{ marginTop: "14px" }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: "6px" }}>
+                <div className="flex items-center gap-1.5">
+                  <Volume2 size={13} style={{ color: "rgba(192,132,252,0.8)" }} />
+                  <span style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.75rem" }} className="font-body">
+                    BGM 음량
+                  </span>
+                </div>
+                <span style={{
+                  color: "#c084fc", fontWeight: 700, fontSize: "0.85rem",
+                  minWidth: "40px", textAlign: "right",
+                }} className="font-body">
+                  {bgmVolume}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0} max={100} step={5}
+                value={bgmVolume}
+                onChange={(e) => setBgmVolume(Number(e.target.value))}
+                style={{
+                  width: "100%", accentColor: "#a855f7",
+                  height: "6px", cursor: "pointer",
+                }}
+              />
+              <div className="flex justify-between" style={{ marginTop: "3px" }}>
+                <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "0.65rem" }} className="font-body">0% (무음)</span>
+                <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "0.65rem" }} className="font-body">50% (보통)</span>
+                <span style={{ color: "rgba(255,255,255,0.3)", fontSize: "0.65rem" }} className="font-body">100%</span>
+              </div>
+            </div>
+
+            {bgmMsg && (
+              <p style={{ color: "rgba(192,132,252,0.9)", fontSize: "0.75rem", marginTop: "8px" }} className="font-body">
+                {bgmMsg}
+              </p>
             )}
           </div>
 

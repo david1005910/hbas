@@ -183,6 +183,17 @@ export async function listVideoClips(req: Request, res: Response, next: NextFunc
   } catch (err) { next(err); }
 }
 
+/** 에피소드의 유효한 BGM 경로 반환 (커스텀 → 환경변수 기본 순) */
+async function getEpisodeBgmPath(episodeId: string): Promise<string | null> {
+  const ep = await prisma.episode.findUnique({ where: { id: episodeId }, select: { bgmUrl: true } });
+  if (ep?.bgmUrl) {
+    const p = `/app${ep.bgmUrl}`;
+    if (fs.existsSync(p)) return p;
+  }
+  const def = process.env.BGM_PATH || "/app/storage/bgm/gregorian.mp3";
+  return fs.existsSync(def) ? def : null;
+}
+
 export async function mergeClips(req: Request, res: Response, next: NextFunction) {
   try {
     const episode = await prisma.episode.findUnique({ where: { id: req.params.id } });
@@ -222,8 +233,10 @@ export async function mergeClips(req: Request, res: Response, next: NextFunction
     // 씬별 나레이션이 이미 합성된 경우 별도 나레이션 합성 불필요
     const hasPerClipNarr = clips.some((c) => c.narrClipUrl);
 
-    const bgmPath = process.env.BGM_PATH || "/app/storage/bgm/gregorian.mp3";
-    const hasBgm = fs.existsSync(bgmPath);
+    const bgmPath = await getEpisodeBgmPath(req.params.id);
+    const hasBgm = !!bgmPath;
+    // bgmVolume: 0.0~1.0, 기본 0.10 (10%)
+    const bgmVolume = Math.min(1.0, Math.max(0.0, parseFloat(req.body.bgmVolume ?? "0.10")));
 
     if (hasNarration && !hasPerClipNarr) {
       const tempPath = finalPath.replace(".mp4", "_silent.mp4");
@@ -233,15 +246,15 @@ export async function mergeClips(req: Request, res: Response, next: NextFunction
       await mergeVideoWithNarration(tempPath, narrationLocalPath!, withNarrPath);
       fs.unlinkSync(tempPath);
       if (hasBgm) {
-        console.log(`[FFmpeg] BGM 혼합 중: ${bgmPath}`);
-        await mixWithBackgroundMusic(withNarrPath, bgmPath, finalPath);
+        console.log(`[FFmpeg] BGM 혼합 중: ${bgmPath} (volume=${bgmVolume})`);
+        await mixWithBackgroundMusic(withNarrPath, bgmPath!, finalPath, bgmVolume);
         fs.unlinkSync(withNarrPath);
       }
     } else if (hasBgm) {
       const tempPath = finalPath.replace(".mp4", "_nobgm.mp4");
       await mergeVideoClips(clipPaths, tempPath);
-      console.log(`[FFmpeg] BGM 혼합 중: ${bgmPath}`);
-      await mixWithBackgroundMusic(tempPath, bgmPath, finalPath);
+      console.log(`[FFmpeg] BGM 혼합 중: ${bgmPath} (volume=${bgmVolume})`);
+      await mixWithBackgroundMusic(tempPath, bgmPath!, finalPath, bgmVolume);
       fs.unlinkSync(tempPath);
     } else {
       await mergeVideoClips(clipPaths, finalPath);
@@ -254,10 +267,11 @@ export async function mergeClips(req: Request, res: Response, next: NextFunction
 
     const label = hasPerClipNarr ? "씬별 나레이션" : hasNarration ? "나레이션 포함" : "나레이션 없음";
     res.json({
-      message: `클립 병합 완료 (${label}${hasBgm ? " + BGM" : ""})`,
+      message: `클립 병합 완료 (${label}${hasBgm ? ` + BGM(${Math.round(bgmVolume * 100)}%)` : ""})`,
       outputPath: finalPath.replace("/app", ""),
       hasNarration: hasNarration || hasPerClipNarr,
       hasBgm,
+      bgmVolume: hasBgm ? bgmVolume : null,
     });
   } catch (err) { next(err); }
 }
@@ -736,15 +750,18 @@ export async function produceFinal(req: Request, res: Response, next: NextFuncti
     });
 
     const finalPath = getFinalEpisodePath(episodeId);
-    const bgmPath = process.env.BGM_PATH || "/app/storage/bgm/gregorian.mp3";
-    const hasBgm = fs.existsSync(bgmPath);
+    const bgmPath = await getEpisodeBgmPath(episodeId);
+    const hasBgm = !!bgmPath;
+    // SSE 요청은 GET이라 body가 없음 → query string으로 받음
+    const bgmVolume = Math.min(1.0, Math.max(0.0, parseFloat((req.query.bgmVolume as string) ?? "0.10")));
 
     if (hasBgm) {
       const tempPath = finalPath.replace(".mp4", "_nobgm.mp4");
       send("merge", `  ${clipPaths.length}개 클립 병합 중...`);
       await mergeVideoClips(clipPaths, tempPath);
-      send("merge", `  그레고리안 성가 BGM 혼합 중...`);
-      await mixWithBackgroundMusic(tempPath, bgmPath, finalPath);
+      const bgmLabel = bgmPath!.includes("gregorian") ? "그레고리안 성가" : "커스텀 BGM";
+      send("merge", `  ${bgmLabel} 혼합 중... (볼륨 ${Math.round(bgmVolume * 100)}%)`);
+      await mixWithBackgroundMusic(tempPath, bgmPath!, finalPath, bgmVolume);
       fs.unlinkSync(tempPath);
     } else {
       send("merge", `  ${clipPaths.length}개 클립 병합 중...`);
