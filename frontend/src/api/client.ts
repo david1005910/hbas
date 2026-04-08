@@ -6,7 +6,7 @@ const API_BASE = import.meta.env.VITE_API_URL
 
 export const api = axios.create({
   baseURL: API_BASE,
-  timeout: 30000,
+  timeout: 600000, // 10분 — FFmpeg 병합/자막/나레이션 작업 대응
 });
 
 api.interceptors.response.use(

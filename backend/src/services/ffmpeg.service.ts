@@ -55,8 +55,8 @@ export async function embedSubtitleToClip(
         `-vf ass=${escapedAss}`,   // -vf 사용 시 -map 0:v:0 불필요 (필터가 대체)
         "-map 0:a:0?",             // 오디오만 명시적 매핑 (없으면 무시)
         "-c:v libx264",
-        "-preset fast",
-        "-crf 22",
+        "-preset ultrafast",  // fast→ultrafast: 자막 번인 인코딩 속도 5배 향상
+        "-crf 23",
         "-c:a copy",
       ])
       .output(outputPath)
@@ -166,27 +166,22 @@ export async function mergeVideoClips(
   const content = clipPaths.map((p) => `file '${p}'`).join("\n");
   fs.writeFileSync(concatFile, content);
 
+  const cleanup = () => { if (fs.existsSync(concatFile)) fs.unlinkSync(concatFile); };
+
   return new Promise((resolve, reject) => {
     ffmpeg()
       .input(concatFile)
       .inputOptions(["-f concat", "-safe 0"])
       .outputOptions([
-        "-c:v libx264",
-        "-preset fast",
-        "-crf 23",
-        "-r 24",
-        "-vf scale=1920:1080",
-        "-pix_fmt yuv420p",
+        // 스트림 복사 — 디코딩/인코딩 없이 연결 (메모리 최소화, 11클립도 수초 내 완료)
+        "-c copy",
+        "-map 0",
+        "-movflags +faststart",
+        "-max_muxing_queue_size 9999",
       ])
       .output(outputPath)
-      .on("end", () => {
-        fs.unlinkSync(concatFile);
-        resolve();
-      })
-      .on("error", (err) => {
-        if (fs.existsSync(concatFile)) fs.unlinkSync(concatFile);
-        reject(err);
-      })
+      .on("end", () => { cleanup(); resolve(); })
+      .on("error", (err) => { cleanup(); reject(err); })
       .run();
   });
 }
