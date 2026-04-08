@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import * as fs from "fs";
 import * as path from "path";
+import { parseAnimPromptByScene } from "../utils/promptBuilder";
 import { startVideoGeneration as veoStart, extendVideo as veoExtend, pollVideoStatus, downloadVideoFromGcs } from "../services/veo.service";
 import {
   mergeVideoClips,
@@ -28,7 +29,24 @@ export async function startVideoGeneration(req: Request, res: Response, next: Ne
     if (!keyframe) return res.status(404).json({ error: "Keyframe not found" });
     if (!keyframe.imageUrl) return res.status(400).json({ error: "Keyframe image not available" });
 
-    const { motionPrompt, durationSec = 8 } = req.body;
+    const { durationSec = 8 } = req.body;
+    let { motionPrompt } = req.body;
+
+    // ANIM_PROMPT에서 씬별 모션 프롬프트 자동 조회 (req.body에 없으면)
+    if (!motionPrompt) {
+      const animRecord = await prisma.generatedContent.findFirst({
+        where: { episodeId: keyframe.episodeId, contentType: "ANIM_PROMPT" },
+        orderBy: { createdAt: "desc" },
+      });
+      if (animRecord) {
+        const scenePrompts = parseAnimPromptByScene(animRecord.content);
+        motionPrompt = scenePrompts.get(keyframe.sceneNumber)?.motion;
+        if (motionPrompt) {
+          console.log(`[Veo] 씬 ${keyframe.sceneNumber} 모션 프롬프트 ANIM_PROMPT에서 로드`);
+        }
+      }
+    }
+
     const imageBuffer = fs.readFileSync(`/app${keyframe.imageUrl}`);
 
     console.log(`[Veo] start, episodeId=${keyframe.episodeId}, scene=${keyframe.sceneNumber}, model=${process.env.VEO_MODEL}`);
@@ -170,12 +188,25 @@ export async function mergeClips(req: Request, res: Response, next: NextFunction
     const episode = await prisma.episode.findUnique({ where: { id: req.params.id } });
     if (!episode) return res.status(404).json({ error: "Not found" });
 
-    const clips = await prisma.sceneVideoClip.findMany({
+    const allClips = await prisma.sceneVideoClip.findMany({
       where: { episodeId: req.params.id, status: "COMPLETED" },
-      orderBy: { sceneNumber: "asc" },
+      orderBy: [{ sceneNumber: "asc" }, { createdAt: "desc" }],
     });
 
-    if (clips.length === 0) return res.status(400).json({ error: "완료된 클립이 없습니다" });
+    if (allClips.length === 0) return res.status(400).json({ error: "완료된 클립이 없습니다" });
+
+    // 씬별 최신 클립 1개만 선택 (narrClipUrl 있는 것 우선, 없으면 최신순)
+    const sceneMap = new Map<number, typeof allClips[0]>();
+    for (const c of allClips) {
+      if (!sceneMap.has(c.sceneNumber)) {
+        sceneMap.set(c.sceneNumber, c);
+      } else {
+        // 이미 있어도 narrClipUrl 있는 클립으로 교체
+        const existing = sceneMap.get(c.sceneNumber)!;
+        if (!existing.narrClipUrl && c.narrClipUrl) sceneMap.set(c.sceneNumber, c);
+      }
+    }
+    const clips = Array.from(sceneMap.values()).sort((a, b) => a.sceneNumber - b.sceneNumber);
 
     // narrClipUrl > subClipUrl > clipUrl 순서로 최선 클립 선택
     const clipPaths = clips.map((c) => {
@@ -605,11 +636,17 @@ export async function produceFinal(req: Request, res: Response, next: NextFuncti
     // ── STEP 3: 최종 병합 + BGM ──────────────────────────────
     send("merge", `🎬 최종 영상 병합 시작`);
 
-    // narrClipUrl > subClipUrl > clipUrl 순서로 최선 클립 선택
-    const freshClips = await prisma.sceneVideoClip.findMany({
+    // 씬별 최신 클립 1개만 선택 (narrClipUrl 우선)
+    const allFreshClips = await prisma.sceneVideoClip.findMany({
       where: { episodeId, status: "COMPLETED" },
-      orderBy: { sceneNumber: "asc" },
+      orderBy: [{ sceneNumber: "asc" }, { createdAt: "desc" }],
     });
+    const freshSceneMap = new Map<number, typeof allFreshClips[0]>();
+    for (const c of allFreshClips) {
+      if (!freshSceneMap.has(c.sceneNumber)) freshSceneMap.set(c.sceneNumber, c);
+      else if (!freshSceneMap.get(c.sceneNumber)!.narrClipUrl && c.narrClipUrl) freshSceneMap.set(c.sceneNumber, c);
+    }
+    const freshClips = Array.from(freshSceneMap.values()).sort((a, b) => a.sceneNumber - b.sceneNumber);
 
     const clipPaths = freshClips.map((c) => {
       if ((c as any).narrClipUrl && fs.existsSync(`/app${(c as any).narrClipUrl}`)) return `/app${(c as any).narrClipUrl}`;

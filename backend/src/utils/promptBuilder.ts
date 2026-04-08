@@ -118,3 +118,42 @@ const MOTION_MAP: Record<string, string> = {
 export function buildVeoMotionPrompt(sceneType: keyof typeof MOTION_MAP): string {
   return MOTION_MAP[sceneType] || MOTION_MAP.establishing;
 }
+
+/**
+ * ANIM_PROMPT 텍스트에서 씬별 이미지/모션 프롬프트를 파싱
+ *
+ * 지원 형식:
+ *   씬 N: / Scene N:
+ *     [이미지 프롬프트]: ...
+ *     [모션 프롬프트]: ...
+ *   또는 **Scene N:** 형태 (마크다운 bold)
+ *
+ * 반환값: sceneNumber → { image, motion } 맵
+ */
+export function parseAnimPromptByScene(animPromptText: string): Map<number, { image: string; motion: string }> {
+  const result = new Map<number, { image: string; motion: string }>();
+
+  // 씬 블록 분리 — 씬 N: / Scene N: / **씬 N:** / **Scene N:**
+  const sceneBlockRegex = /(?:\*{0,2})(?:씬|Scene)\s+(\d+)\s*[:\*]/gi;
+  const parts = animPromptText.split(sceneBlockRegex);
+
+  // split 결과: [pre, n1, block1, n2, block2, ...]
+  for (let i = 1; i < parts.length - 1; i += 2) {
+    const sceneNo = parseInt(parts[i], 10);
+    const block = parts[i + 1] || "";
+
+    // [이미지 프롬프트]: 다음 텍스트 추출
+    const imageMatch = block.match(/\[이미지\s*프롬프트\][^\:]*:\s*(.+?)(?=\[모션|\[motion|\n\s*\n|\Z)/si);
+    // [모션 프롬프트]: 다음 텍스트 추출
+    const motionMatch = block.match(/\[모션\s*프롬프트\][^\:]*:\s*(.+?)(?=\[이미지|\[image|\n\s*\n|\Z)/si);
+
+    const image = imageMatch ? imageMatch[1].trim().replace(/\s+/g, " ") : "";
+    const motion = motionMatch ? motionMatch[1].trim().replace(/\s+/g, " ") : "";
+
+    if (sceneNo > 0 && image) {
+      result.set(sceneNo, { image, motion });
+    }
+  }
+
+  return result;
+}

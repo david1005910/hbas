@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { generateKeyframe } from "../services/nanoBanana.service";
 import { saveKeyframe, getKeyframeWebPath } from "../utils/imageStorage";
-import { buildNanoBananaPrompt } from "../utils/promptBuilder";
+import { buildNanoBananaPrompt, parseAnimPromptByScene } from "../utils/promptBuilder";
 import { prisma } from "../config/database";
 
 function sseWrite(res: Response, data: object) {
@@ -22,16 +22,37 @@ export async function generateEpisodeKeyframes(req: Request, res: Response, next
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
 
+    // ANIM_PROMPT에서 씬별 이미지/모션 프롬프트 파싱 (있으면 사용, 없으면 fallback)
+    const animPromptRecord = await prisma.generatedContent.findFirst({
+      where: { episodeId: episode.id, contentType: "ANIM_PROMPT" },
+      orderBy: { createdAt: "desc" },
+    });
+    const scenePrompts = animPromptRecord
+      ? parseAnimPromptByScene(animPromptRecord.content)
+      : new Map<number, { image: string; motion: string }>();
+
+    if (scenePrompts.size > 0) {
+      console.log(`[Keyframe] ANIM_PROMPT 파싱 완료: ${scenePrompts.size}개 씬 프롬프트 추출`);
+    } else {
+      console.warn(`[Keyframe] ANIM_PROMPT 없음 또는 파싱 실패 — fallback 프롬프트 사용`);
+    }
+
     for (let i = 1; i <= episode.sceneCount; i++) {
-      // 씬 사이 딜레이 — 분당 쿼터 보호 (첫 씬 제외)
       if (i > 1) await new Promise((r) => setTimeout(r, 3000));
       sseWrite(res, { scene: i, status: "generating" });
       try {
-        const prompt = buildNanoBananaPrompt(
-          `Scene ${i} from ${episode.bibleBook.nameEn}: ${episode.titleKo}`,
-          episode.animStyle || "Epic 3D Cinematic"
-        );
-        console.log(`[Keyframe] Generating scene ${i}, episodeId=${episode.id}, model=${process.env.NANO_BANANA_MODEL}`);
+        // 씬별 이미지 프롬프트 우선 사용, 없으면 fallback
+        const sceneImagePrompt = scenePrompts.get(i)?.image;
+        const prompt = sceneImagePrompt
+          ? buildNanoBananaPrompt(sceneImagePrompt, episode.animStyle || "Epic 3D Cinematic")
+          : buildNanoBananaPrompt(
+              `Scene ${i} from ${episode.bibleBook.nameEn}: ${episode.titleKo}`,
+              episode.animStyle || "Epic 3D Cinematic"
+            );
+
+        const promptSource = sceneImagePrompt ? "ANIM_PROMPT" : "fallback";
+        console.log(`[Keyframe] 씬 ${i} 생성 (${promptSource}), episodeId=${episode.id}`);
+
         const imageBuffer = await generateKeyframe(prompt, "16:9", episode.id, i);
         const filePath = saveKeyframe(episode.id, i, imageBuffer);
 

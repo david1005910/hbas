@@ -79,17 +79,41 @@ function toAssTs(sec: number): string {
 }
 
 /**
+ * 텍스트를 N 덩어리로 균등 분할 (단어 단위)
+ * 예: "A B C D E F" → 3등분 → ["A B", "C D", "E F"]
+ */
+function splitTextIntoChunks(text: string, chunks: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return Array(chunks).fill("");
+  const chunkSize = Math.max(1, Math.ceil(words.length / chunks));
+  const result: string[] = [];
+  for (let i = 0; i < chunks; i++) {
+    const slice = words.slice(i * chunkSize, (i + 1) * chunkSize);
+    result.push(slice.join(" "));
+  }
+  // 나머지 빈 슬롯 채우기
+  while (result.length < chunks) result.push("");
+  return result;
+}
+
+/**
  * 한국어 + 히브리어 자막을 합쳐 ASS 형식으로 생성
+ * - 자막 텍스트를 SUBTITLE_CHUNKS 등분하여 클립 전체에 순서대로 표시
  * - 한국어: 하단 중앙 (흰색)
  * - 히브리어: 한국어 위 (금색, RTL 자동 처리)
  */
+const SUBTITLE_CHUNKS = 6; // 씬당 자막을 몇 등분으로 나눌지
+
 export function buildSceneAss(
   koText: string,
   heText: string | undefined,
   clipDurationSec = 8
 ): string {
-  const start = toAssTs(0.5);
-  const end   = toAssTs(Math.max(1.5, clipDurationSec - 0.5));
+  const usable = Math.max(0.5, clipDurationSec - 0.5);
+  const chunkDur = usable / SUBTITLE_CHUNKS;
+
+  const koChunks = splitTextIntoChunks(koText, SUBTITLE_CHUNKS);
+  const heChunks = heText ? splitTextIntoChunks(heText, SUBTITLE_CHUNKS) : null;
 
   const header = `[Script Info]
 ScriptType: v4.00+
@@ -105,11 +129,17 @@ Style: Hebrew,Noto Sans,38,&H0000D4FF,&H000000FF,&H00000000,&H80000000,0,0,0,0,1
 [Events]
 Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text`;
 
-  const lines: string[] = [header];
-  lines.push(`Dialogue: 0,${start},${end},Korean,,0,0,0,,${koText}`);
-  if (heText) {
-    // RTL 마커 + 히브리어 텍스트
-    lines.push(`Dialogue: 0,${start},${end},Hebrew,,0,0,0,,${heText}`);
+  const dialogues: string[] = [header];
+
+  for (let i = 0; i < SUBTITLE_CHUNKS; i++) {
+    const s = toAssTs(0.5 + i * chunkDur);
+    const e = toAssTs(0.5 + (i + 1) * chunkDur);
+    const ko = koChunks[i];
+    const he = heChunks ? heChunks[i] : null;
+
+    if (ko) dialogues.push(`Dialogue: 0,${s},${e},Korean,,0,0,0,,${ko}`);
+    if (he) dialogues.push(`Dialogue: 0,${s},${e},Hebrew,,0,0,0,,${he}`);
   }
-  return lines.join("\n") + "\n";
+
+  return dialogues.join("\n") + "\n";
 }
