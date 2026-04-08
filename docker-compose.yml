@@ -22,6 +22,7 @@ services:
       - "4000:4000"
     volumes:
       - ./backend/src:/app/src
+      - ./backend/prisma:/app/prisma
       - ./storage:/app/storage
       - ./storage/audio:/app/storage/audio
       - ./storage/bgm:/app/storage/bgm

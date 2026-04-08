@@ -1,0 +1,82 @@
+[
+  {
+    "bookOrderNo": 1,
+    "chapter": 1,
+    "verse": 1,
+    "hebrewText": "בְּרֵאשִׁית בָּרָא אֱלֹהִים אֵת הַשָּׁמַיִם וְאֵת הָאָרֶץ",
+    "koreanText": "태초에 하나님이 천지를 창조하시니라",
+    "actorTag": "Scene_Creation_Heavens"
+  },
+  {
+    "bookOrderNo": 1,
+    "chapter": 1,
+    "verse": 2,
+    "hebrewText": "וְהָאָרֶץ הָיְתָה תֹהוּ וָבֹהוּ וְחֹשֶׁךְ עַל־פְּנֵי תְהוֹם",
+    "koreanText": "땅이 혼돈하고 공허하며 흑암이 깊음 위에 있고",
+    "actorTag": "Scene_Creation_Void"
+  },
+  {
+    "bookOrderNo": 1,
+    "chapter": 1,
+    "verse": 3,
+    "hebrewText": "וַיֹּאמֶר אֱלֹהִים יְהִי אוֹר וַיְהִי־אוֹר",
+    "koreanText": "하나님이 이르시되 빛이 있으라 하시니 빛이 있었고",
+    "actorTag": "Scene_Creation_Light"
+  },
+  {
+    "bookOrderNo": 2,
+    "chapter": 25,
+    "verse": 10,
+    "hebrewText": "וְעָשׂוּ אֲרוֹן עֲצֵי שִׁטִּים אַמָּתַיִם וָחֵצִי אָרְכּוֹ",
+    "koreanText": "그들은 조각목으로 궤를 만들되 길이는 두 규빗 반이요",
+    "actorTag": "Tabernacle_ArkOfCovenant"
+  },
+  {
+    "bookOrderNo": 2,
+    "chapter": 25,
+    "verse": 17,
+    "hebrewText": "וְעָשִׂיתָ כַפֹּרֶת זָהָב טָהוֹר אַמָּתַיִם וָחֵצִי אָרְכָּהּ",
+    "koreanText": "순금으로 속죄소를 만들되 길이는 두 규빗 반이요",
+    "actorTag": "Tabernacle_MercySeat"
+  },
+  {
+    "bookOrderNo": 2,
+    "chapter": 25,
+    "verse": 23,
+    "hebrewText": "וְעָשִׂיתָ שֻׁלְחָן עֲצֵי שִׁטִּים אַמָּתַיִם אָרְכּוֹ",
+    "koreanText": "조각목으로 상을 만들되 길이는 두 규빗이요",
+    "actorTag": "Tabernacle_ShowbreadTable"
+  },
+  {
+    "bookOrderNo": 2,
+    "chapter": 25,
+    "verse": 31,
+    "hebrewText": "וְעָשִׂיתָ מְנֹרַת זָהָב טָהוֹר מִקְשָׁה תֵּעָשֶׂה הַמְּנוֹרָה",
+    "koreanText": "순금으로 등잔대를 만들되 그 밑판과 줄기와 잔과 꽃받침과 꽃을 하나로 연결하고",
+    "actorTag": "Tabernacle_Menorah"
+  },
+  {
+    "bookOrderNo": 2,
+    "chapter": 27,
+    "verse": 1,
+    "hebrewText": "וְעָשִׂיתָ אֶת־הַמִּזְבֵּחַ עֲצֵי שִׁטִּים חָמֵשׁ אַמּוֹת אֹרֶךְ",
+    "koreanText": "조각목으로 제단을 만들되 길이는 다섯 규빗이요",
+    "actorTag": "Tabernacle_BronzeAltar"
+  },
+  {
+    "bookOrderNo": 2,
+    "chapter": 30,
+    "verse": 1,
+    "hebrewText": "וְעָשִׂיתָ מִזְבֵּחַ מִקְטַר קְטֹרֶת עֲצֵי שִׁטִּים תַּעֲשֶׂה אֹתוֹ",
+    "koreanText": "너는 분향할 제단을 만들되 조각목으로 만들고",
+    "actorTag": "Tabernacle_IncenseAltar"
+  },
+  {
+    "bookOrderNo": 2,
+    "chapter": 30,
+    "verse": 18,
+    "hebrewText": "וְעָשִׂיתָ כִּיּוֹר נְחֹשֶׁת וְכַנּוֹ נְחֹשֶׁת לְרָחְצָה",
+    "koreanText": "너는 물두멍을 놋으로 만들고 그 받침도 놋으로 만들어 씻게 하되",
+    "actorTag": "Tabernacle_BronzeLaver"
+  }
+]

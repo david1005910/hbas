@@ -20,15 +20,32 @@ model Project {
 }
 
 model BibleBook {
-  id            Int       @id @default(autoincrement())
-  nameKo        String    @db.VarChar(100)
-  nameHe        String    @db.VarChar(100)
-  nameEn        String    @db.VarChar(100)
-  orderNo       Int       @unique
+  id            Int          @id @default(autoincrement())
+  nameKo        String       @db.VarChar(100)
+  nameHe        String       @db.VarChar(100)
+  nameEn        String       @db.VarChar(100)
+  orderNo       Int          @unique
   totalChapters Int
   episodes      Episode[]
+  verses        BibleVerse[]
 
   @@map("bible_books")
+}
+
+// 구절별 히브리어 원문 + 언리얼 엔진 3D Actor 태그 매핑
+model BibleVerse {
+  id         String    @id @default(uuid())
+  bookId     Int
+  book       BibleBook @relation(fields: [bookId], references: [id])
+  chapter    Int
+  verse      Int
+  hebrewText String    @db.Text         // BHS 히브리어 원문 (RTL)
+  koreanText String    @db.Text         // 한국어 번역
+  actorTag   String?   @db.VarChar(200) // 언리얼 엔진 Actor 태그 (3D 오브젝트 연동)
+  createdAt  DateTime  @default(now())
+
+  @@unique([bookId, chapter, verse])
+  @@map("bible_verses")
 }
 
 model Episode {
