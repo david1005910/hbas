@@ -28,4 +28,6 @@ export const videoClipsApi = {
     api.post(`/episodes/${episodeId}/reset-clips`).then((r) => r.data),
   mergeScene: (episodeId: string, sceneNo: number) =>
     api.post(`/episodes/${episodeId}/merge-scene/${sceneNo}`).then((r) => r.data),
+  generateSceneClips: (episodeId: string, sceneNo: number, count = 5) =>
+    api.post(`/episodes/${episodeId}/generate-scene-clips/${sceneNo}`, { confirmed: true, count, durationSec: 8 }).then((r) => r.data),
 };

@@ -64,6 +64,8 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
     return () => clearInterval(interval);
   }, [clips]);
 
+  const CLIPS_PER_SCENE = 5; // 씬당 생성할 클립 수
+
   async function handleStartGeneration(keyframeId: string, sceneNumber: number, motionPrompt?: string) {
     try {
       const clip = await videoClipsApi.start(keyframeId, {
@@ -75,6 +77,18 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
       setConfirmScene(null);
     } catch (e: any) {
       setConfirmScene(null);
+      setActionMsg(`⚠️ 씬 ${sceneNumber} 생성 오류: ${e?.response?.data?.error ?? e.message}`);
+    }
+  }
+
+  async function handleGenerateSceneClips(sceneNumber: number) {
+    setConfirmScene(null);
+    setActionMsg(`씬 ${sceneNumber}: ${CLIPS_PER_SCENE}개 클립 생성 요청 중...`);
+    try {
+      const res = await videoClipsApi.generateSceneClips(episodeId, sceneNumber, CLIPS_PER_SCENE);
+      setClips((prev) => [...prev, ...res.clips]);
+      setActionMsg(`✅ 씬 ${sceneNumber}: ${res.clips.length}개 클립 생성 시작 — 약 2~5분 소요`);
+    } catch (e: any) {
       setActionMsg(`⚠️ 씬 ${sceneNumber} 생성 오류: ${e?.response?.data?.error ?? e.message}`);
     }
   }
@@ -250,6 +264,7 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
   }
 
   const [mergingScene, setMergingScene] = useState<number | null>(null);
+  const autoMergedScenes = useRef<Set<number>>(new Set());
 
   async function handleMergeScene(sceneNo: number) {
     setMergingScene(sceneNo);
@@ -274,6 +289,23 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
     if (c.status === "COMPLETED") acc[c.sceneNumber] = (acc[c.sceneNumber] ?? 0) + 1;
     return acc;
   }, {});
+  // 씬별 진행 중 클립 수 집계
+  const sceneProcessingCount = clips.reduce<Record<number, number>>((acc, c) => {
+    if (c.status === "PROCESSING") acc[c.sceneNumber] = (acc[c.sceneNumber] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  // 씬의 완료 클립이 CLIPS_PER_SCENE개 되면 자동 병합
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    for (const [sceneNo, count] of Object.entries(sceneClipCount)) {
+      const n = parseInt(sceneNo, 10);
+      if (count >= CLIPS_PER_SCENE && !autoMergedScenes.current.has(n) && mergingScene !== n) {
+        autoMergedScenes.current.add(n);
+        handleMergeScene(n);
+      }
+    }
+  }, [sceneClipCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
@@ -697,10 +729,18 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
             </div>
           )}
 
-          {/* Clip list */}
+          {/* Clip list — 씬별 그룹 */}
           <div className="space-y-3">
             {selectedKeyframes.map((kf) => {
-              const clip = clips.find((c) => c.keyframeId === kf.id);
+              // 이 씬의 모든 클립
+              const sceneClips = clips.filter((c) => c.sceneNumber === kf.sceneNumber);
+              const completed = sceneClips.filter((c) => c.status === "COMPLETED");
+              const processing = sceneClips.filter((c) => c.status === "PROCESSING");
+              const failed = sceneClips.filter((c) => c.status === "FAILED");
+              // 대표 완료 클립 (병합 후 1개 남거나 나레이션/자막 있는 것 우선)
+              const repClip = completed.find((c) => c.narrClipUrl) ?? completed.find((c) => c.subClipUrl) ?? completed[0];
+              const isAutoMerging = mergingScene === kf.sceneNumber;
+              const allDone = completed.length >= CLIPS_PER_SCENE;
 
               return (
                 <div
@@ -741,34 +781,70 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                         >
                           씬 {kf.sceneNumber}
                         </p>
-                        {clip && (
-                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                            {STATUS_ICON[clip.status]}
-                            <span
-                              style={{
-                                fontSize: "0.75rem",
-                                color: "rgba(255,255,255,0.6)",
-                                textShadow: "0px 1px 2px rgba(0,0,0,0.2)",
-                              }}
-                              className="font-body"
-                            >
-                              {clipStatusLabel(clip)}
+                        {/* 상태 표시 */}
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          {sceneClips.length === 0 && (
+                            <span style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.4)" }} className="font-body">
+                              영상 없음
                             </span>
-                            {clip.subClipUrl && (
-                              <span style={{ fontSize: "0.7rem", color: "#a5b4fc", background: "rgba(99,102,241,0.2)", padding: "1px 6px", borderRadius: "8px" }}>자막</span>
-                            )}
-                            {clip.narrClipUrl && (
-                              <span style={{ fontSize: "0.7rem", color: "#f9a8d4", background: "rgba(236,72,153,0.2)", padding: "1px 6px", borderRadius: "8px" }}>나레이션</span>
-                            )}
+                          )}
+                          {processing.length > 0 && (
+                            <>
+                              <RefreshCw size={13} className="animate-spin" style={{ color: "#f0abfc" }} />
+                              <span style={{ fontSize: "0.72rem", color: "#f0abfc" }} className="font-body">
+                                생성 중 ({completed.length + processing.length}/{CLIPS_PER_SCENE})
+                              </span>
+                            </>
+                          )}
+                          {isAutoMerging && (
+                            <>
+                              <Film size={13} style={{ color: "#fbbf24" }} className="animate-pulse" />
+                              <span style={{ fontSize: "0.72rem", color: "#fbbf24" }} className="font-body">
+                                자동 병합 중…
+                              </span>
+                            </>
+                          )}
+                          {!isAutoMerging && completed.length > 0 && processing.length === 0 && (
+                            <>
+                              <CheckCircle size={13} style={{ color: "#86efac" }} />
+                              <span style={{ fontSize: "0.72rem", color: "#86efac" }} className="font-body">
+                                완료 ({completed.length}개 · {completed.reduce((s, c) => s + (c.durationSec ?? 8), 0)}초)
+                              </span>
+                            </>
+                          )}
+                          {failed.length > 0 && (
+                            <span style={{ fontSize: "0.7rem", color: "#fca5a5", background: "rgba(239,68,68,0.15)", padding: "1px 6px", borderRadius: "8px" }} className="font-body">
+                              실패 {failed.length}개
+                            </span>
+                          )}
+                          {repClip?.subClipUrl && (
+                            <span style={{ fontSize: "0.7rem", color: "#a5b4fc", background: "rgba(99,102,241,0.2)", padding: "1px 6px", borderRadius: "8px" }}>자막</span>
+                          )}
+                          {repClip?.narrClipUrl && (
+                            <span style={{ fontSize: "0.7rem", color: "#f9a8d4", background: "rgba(236,72,153,0.2)", padding: "1px 6px", borderRadius: "8px" }}>나레이션</span>
+                          )}
+                        </div>
+                        {/* 진행 바 (생성 중일 때) */}
+                        {(processing.length > 0 || (completed.length > 0 && completed.length < CLIPS_PER_SCENE && processing.length === 0)) && (
+                          <div style={{ marginTop: "6px", width: "160px" }}>
+                            <div style={{ height: "4px", borderRadius: "4px", background: "rgba(255,255,255,0.12)", overflow: "hidden" }}>
+                              <div style={{
+                                height: "100%",
+                                width: `${(completed.length / CLIPS_PER_SCENE) * 100}%`,
+                                background: "linear-gradient(90deg, #a855f7, #ec4899)",
+                                transition: "width 0.5s ease",
+                                borderRadius: "4px",
+                              }} />
+                            </div>
                           </div>
                         )}
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {clip?.status === "COMPLETED" && clip.clipUrl && (
+                      {repClip?.clipUrl && (
                         <a
-                          href={clip.clipUrl}
+                          href={repClip.clipUrl}
                           download
                           style={{
                             fontSize: "0.75rem",
@@ -781,9 +857,9 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                           다운로드
                         </a>
                       )}
-                      {clip && confirmDeleteId !== clip.id && (
+                      {repClip && confirmDeleteId !== repClip.id && (
                         <button
-                          onClick={() => setConfirmDeleteId(clip.id)}
+                          onClick={() => setConfirmDeleteId(repClip.id)}
                           style={{
                             display: "flex", alignItems: "center", gap: "4px",
                             padding: "5px 10px", borderRadius: "14px",
@@ -799,13 +875,13 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                           <Trash2 size={11} />
                         </button>
                       )}
-                      {clip && confirmDeleteId === clip.id && (
+                      {repClip && confirmDeleteId === repClip.id && (
                         <div className="flex items-center gap-1.5">
                           <span style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.6)" }} className="font-body">
                             삭제?
                           </span>
                           <button
-                            onClick={() => handleDeleteClip(clip.id)}
+                            onClick={() => handleDeleteClip(repClip.id)}
                             style={{
                               padding: "4px 10px", borderRadius: "12px",
                               background: "rgba(239,68,68,0.4)",
@@ -832,167 +908,137 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                           </button>
                         </div>
                       )}
-                      {(!clip || clip.status === "FAILED") && confirmScene !== kf.sceneNumber && (
+                      {/* 씬 영상 생성 버튼 (클립 없거나 전부 실패한 경우) */}
+                      {sceneClips.length === 0 || (completed.length === 0 && processing.length === 0) ? (
+                        confirmScene !== kf.sceneNumber ? (
+                          <button
+                            onClick={() => setConfirmScene(kf.sceneNumber)}
+                            style={{
+                              display: "flex", alignItems: "center", gap: "6px",
+                              padding: "7px 14px", borderRadius: "16px",
+                              background: "linear-gradient(135deg, rgba(249,115,22,0.45) 0%, rgba(236,72,153,0.35) 100%)",
+                              border: "1px solid rgba(255,255,255,0.35)",
+                              color: "#ffffff", fontSize: "0.78rem", fontWeight: 600,
+                              cursor: "pointer",
+                              boxShadow: "0px 3px 10px rgba(0,0,0,0.2), inset 0px 1px 1px rgba(255,255,255,0.2)",
+                              transition: "all 0.2s ease",
+                            }}
+                            className="font-body"
+                          >
+                            <Play size={13} />
+                            씬 영상 생성 ({CLIPS_PER_SCENE}×8s)
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span style={{ fontSize: "0.73rem", color: "rgba(255,255,255,0.8)" }} className="font-body">
+                              Veo {CLIPS_PER_SCENE}회 비용 발생. 확인?
+                            </span>
+                            <button
+                              onClick={() => handleGenerateSceneClips(kf.sceneNumber)}
+                              style={{
+                                padding: "5px 14px", borderRadius: "14px",
+                                background: "linear-gradient(135deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.2) 100%)",
+                                border: "1px solid rgba(255,255,255,0.5)",
+                                color: "#ffffff", fontSize: "0.75rem", fontWeight: 700,
+                                cursor: "pointer",
+                              }}
+                              className="font-body"
+                            >
+                              확인
+                            </button>
+                            <button
+                              onClick={() => setConfirmScene(null)}
+                              style={{
+                                padding: "5px 12px", borderRadius: "14px",
+                                background: "rgba(255,255,255,0.08)",
+                                border: "1px solid rgba(255,255,255,0.2)",
+                                color: "rgba(255,255,255,0.6)", fontSize: "0.75rem",
+                                cursor: "pointer",
+                              }}
+                              className="font-body"
+                            >
+                              취소
+                            </button>
+                          </div>
+                        )
+                      ) : null}
+
+                      {/* 수동 병합 버튼 (자동 병합 전, 2개 이상 완료 시) */}
+                      {!allDone && completed.length >= 2 && !isAutoMerging && (
                         <button
-                          onClick={() => setConfirmScene(kf.sceneNumber)}
+                          onClick={() => handleMergeScene(kf.sceneNumber)}
                           style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            padding: "6px 14px",
-                            borderRadius: "16px",
-                            background: "linear-gradient(135deg, rgba(249,115,22,0.4) 0%, rgba(236,72,153,0.3) 100%)",
-                            border: "1px solid rgba(255,255,255,0.3)",
-                            color: "#ffffff",
-                            fontSize: "0.75rem",
-                            fontWeight: 500,
+                            display: "flex", alignItems: "center", gap: "5px",
+                            padding: "5px 12px", borderRadius: "14px",
+                            background: "rgba(251,191,36,0.2)",
+                            border: "1px solid rgba(251,191,36,0.45)",
+                            color: "#fbbf24", fontSize: "0.72rem", fontWeight: 600,
                             cursor: "pointer",
-                            boxShadow: "0px 2px 8px rgba(0,0,0,0.15), inset 0px 1px 1px rgba(255,255,255,0.2)",
-                            textShadow: "0px 1px 3px rgba(0,0,0,0.3)",
-                            transition: "all 0.2s ease",
                           }}
                           className="font-body"
                         >
-                          <Play size={12} />
-                          영상 생성
+                          <Film size={12} />
+                          지금 병합 ({completed.length}개)
                         </button>
-                      )}
-                      {confirmScene === kf.sceneNumber && (
-                        <div className="flex items-center gap-2">
-                          <span
-                            style={{
-                              fontSize: "0.75rem",
-                              color: "rgba(255,255,255,0.7)",
-                              textShadow: "0px 1px 2px rgba(0,0,0,0.2)",
-                            }}
-                            className="font-body"
-                          >
-                            비용 발생. 확인?
-                          </span>
-                          <button
-                            onClick={() => handleStartGeneration(kf.id, kf.sceneNumber)}
-                            style={{
-                              padding: "5px 14px",
-                              borderRadius: "16px",
-                              background: "linear-gradient(135deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.2) 100%)",
-                              border: "1px solid rgba(255,255,255,0.5)",
-                              color: "#ffffff",
-                              fontSize: "0.75rem",
-                              fontWeight: 700,
-                              cursor: "pointer",
-                              boxShadow: "0px 2px 8px rgba(0,0,0,0.2), inset 0px 1px 1px rgba(255,255,255,0.4)",
-                              textShadow: "0px 1px 3px rgba(0,0,0,0.3)",
-                            }}
-                            className="font-body"
-                          >
-                            확인
-                          </button>
-                          <button
-                            onClick={() => setConfirmScene(null)}
-                            style={{
-                              padding: "5px 14px",
-                              borderRadius: "16px",
-                              background: "rgba(255,255,255,0.08)",
-                              border: "1px solid rgba(255,255,255,0.2)",
-                              color: "rgba(255,255,255,0.6)",
-                              fontSize: "0.75rem",
-                              cursor: "pointer",
-                            }}
-                            className="font-body"
-                          >
-                            취소
-                          </button>
-                        </div>
                       )}
                     </div>
                   </div>
 
-                  {/* 씬 병합 버튼 — 완료 클립이 2개 이상일 때 */}
-                  {(sceneClipCount[kf.sceneNumber] ?? 0) >= 2 && (
-                    <div style={{ marginTop: "8px" }}>
-                      <button
-                        onClick={() => handleMergeScene(kf.sceneNumber)}
-                        disabled={mergingScene === kf.sceneNumber}
-                        style={{
-                          display: "flex", alignItems: "center", gap: "5px",
-                          padding: "5px 14px", borderRadius: "14px",
-                          background: "rgba(251,191,36,0.22)",
-                          border: "1px solid rgba(251,191,36,0.5)",
-                          color: "#fbbf24",
-                          fontSize: "0.73rem", fontWeight: 600,
-                          cursor: mergingScene === kf.sceneNumber ? "not-allowed" : "pointer",
-                          opacity: mergingScene === kf.sceneNumber ? 0.5 : 1,
-                        }}
-                        className="font-body"
-                        title={`씬 ${kf.sceneNumber}의 ${sceneClipCount[kf.sceneNumber]}개 클립을 하나로 병합`}
-                      >
-                        <Film size={12} />
-                        {mergingScene === kf.sceneNumber
-                          ? "병합 중..."
-                          : `씬 병합 (${sceneClipCount[kf.sceneNumber]}개 × 8s)`}
-                      </button>
-                    </div>
-                  )}
-
-                  {clip?.status === "COMPLETED" && (
+                  {/* 완료 클립 액션 버튼 (자막/나레이션) */}
+                  {repClip && completed.length > 0 && processing.length === 0 && (
                     <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: "10px" }}>
                       <button
-                        onClick={() => handleBurnSubtitleOne(clip.id, kf.sceneNumber)}
-                        disabled={!!clipActionState[clip.id]?.sub}
+                        onClick={() => handleBurnSubtitleOne(repClip.id, kf.sceneNumber)}
+                        disabled={!!clipActionState[repClip.id]?.sub}
                         style={{
                           display: "flex", alignItems: "center", gap: "5px",
                           padding: "4px 11px", borderRadius: "14px",
-                          background: clip.subClipUrl
-                            ? "rgba(99,102,241,0.35)"
-                            : "rgba(99,102,241,0.18)",
-                          border: `1px solid ${clip.subClipUrl ? "rgba(165,180,252,0.6)" : "rgba(99,102,241,0.3)"}`,
-                          color: clip.subClipUrl ? "#a5b4fc" : "rgba(165,180,252,0.7)",
+                          background: repClip.subClipUrl ? "rgba(99,102,241,0.35)" : "rgba(99,102,241,0.18)",
+                          border: `1px solid ${repClip.subClipUrl ? "rgba(165,180,252,0.6)" : "rgba(99,102,241,0.3)"}`,
+                          color: repClip.subClipUrl ? "#a5b4fc" : "rgba(165,180,252,0.7)",
                           fontSize: "0.72rem", fontWeight: 500,
-                          cursor: clipActionState[clip.id]?.sub ? "not-allowed" : "pointer",
-                          opacity: clipActionState[clip.id]?.sub ? 0.5 : 1,
+                          cursor: clipActionState[repClip.id]?.sub ? "not-allowed" : "pointer",
+                          opacity: clipActionState[repClip.id]?.sub ? 0.5 : 1,
                           transition: "all 0.2s ease",
                         }}
                         className="font-body"
-                        title="이 씬에 자막 삽입"
                       >
                         <FileText size={11} />
-                        {clipActionState[clip.id]?.sub ? "삽입 중..." : clip.subClipUrl ? "자막 재삽입" : "자막 삽입"}
+                        {clipActionState[repClip.id]?.sub ? "삽입 중..." : repClip.subClipUrl ? "자막 재삽입" : "자막 삽입"}
                       </button>
                       <button
-                        onClick={() => handleAddNarrationOne(clip.id, kf.sceneNumber)}
-                        disabled={!!clipActionState[clip.id]?.narr}
+                        onClick={() => handleAddNarrationOne(repClip.id, kf.sceneNumber)}
+                        disabled={!!clipActionState[repClip.id]?.narr}
                         style={{
                           display: "flex", alignItems: "center", gap: "5px",
                           padding: "4px 11px", borderRadius: "14px",
-                          background: clip.narrClipUrl
-                            ? "rgba(236,72,153,0.35)"
-                            : "rgba(236,72,153,0.18)",
-                          border: `1px solid ${clip.narrClipUrl ? "rgba(249,168,212,0.6)" : "rgba(236,72,153,0.3)"}`,
-                          color: clip.narrClipUrl ? "#f9a8d4" : "rgba(249,168,212,0.7)",
+                          background: repClip.narrClipUrl ? "rgba(236,72,153,0.35)" : "rgba(236,72,153,0.18)",
+                          border: `1px solid ${repClip.narrClipUrl ? "rgba(249,168,212,0.6)" : "rgba(236,72,153,0.3)"}`,
+                          color: repClip.narrClipUrl ? "#f9a8d4" : "rgba(249,168,212,0.7)",
                           fontSize: "0.72rem", fontWeight: 500,
-                          cursor: clipActionState[clip.id]?.narr ? "not-allowed" : "pointer",
-                          opacity: clipActionState[clip.id]?.narr ? 0.5 : 1,
+                          cursor: clipActionState[repClip.id]?.narr ? "not-allowed" : "pointer",
+                          opacity: clipActionState[repClip.id]?.narr ? 0.5 : 1,
                           transition: "all 0.2s ease",
                         }}
                         className="font-body"
-                        title="이 씬에 나레이션 합성"
                       >
                         <Mic2 size={11} />
-                        {clipActionState[clip.id]?.narr ? "합성 중..." : clip.narrClipUrl ? "나레이션 재합성" : "나레이션 합성"}
+                        {clipActionState[repClip.id]?.narr ? "합성 중..." : repClip.narrClipUrl ? "나레이션 재합성" : "나레이션 합성"}
                       </button>
                     </div>
                   )}
 
-                  {clip?.status === "COMPLETED" && clip.clipUrl && (
+                  {/* 비디오 미리보기 */}
+                  {repClip?.clipUrl && processing.length === 0 && (
                     <div style={{ marginTop: "12px" }}>
-                      {(clip.narrClipUrl || clip.subClipUrl) && (
+                      {(repClip.narrClipUrl || repClip.subClipUrl) && (
                         <p style={{ fontSize: "0.68rem", color: "rgba(255,255,255,0.4)", marginBottom: "4px" }} className="font-body">
-                          {clip.narrClipUrl ? "▶ 나레이션 합성본 미리보기" : "▶ 자막 삽입본 미리보기"}
+                          {repClip.narrClipUrl ? "▶ 나레이션 합성본 미리보기" : "▶ 자막 삽입본 미리보기"}
                         </p>
                       )}
                       <video
-                        key={clip.narrClipUrl ?? clip.subClipUrl ?? clip.clipUrl}
-                        src={clip.narrClipUrl ?? clip.subClipUrl ?? clip.clipUrl ?? ""}
+                        key={repClip.narrClipUrl ?? repClip.subClipUrl ?? repClip.clipUrl}
+                        src={repClip.narrClipUrl ?? repClip.subClipUrl ?? repClip.clipUrl ?? ""}
                         controls
                         style={{
                           width: "100%",

@@ -536,6 +536,72 @@ export async function resetClipProcessing(req: Request, res: Response, next: Nex
 }
 
 /**
+ * 씬 N에 대해 지정 수(기본 5개)의 Veo 클립을 한 번에 시작
+ * POST /api/v1/episodes/:id/generate-scene-clips/:sceneNo
+ * body: { confirmed: true, count?: number, durationSec?: number }
+ */
+export async function generateSceneClips(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (req.body.confirmed !== true) {
+      return res.status(402).json({ error: "Veo generation requires explicit confirmation" });
+    }
+
+    const { id: episodeId, sceneNo } = req.params;
+    const sceneNumber = parseInt(sceneNo, 10);
+    if (isNaN(sceneNumber)) return res.status(400).json({ error: "sceneNo 는 숫자여야 합니다" });
+
+    const clipsCount = Math.min(10, Math.max(1, parseInt(req.body.count ?? "5", 10)));
+    const durationSec = parseInt(req.body.durationSec ?? "8", 10) as 8 | 6 | 7 | 5;
+
+    // 씬의 selected 키프레임 찾기
+    const keyframe = await prisma.sceneKeyframe.findFirst({
+      where: { episodeId, sceneNumber, isSelected: true },
+    });
+    if (!keyframe) return res.status(404).json({ error: `씬 ${sceneNumber}의 선택된 키프레임이 없습니다. 먼저 키프레임을 선택하세요.` });
+    if (!keyframe.imageUrl) return res.status(400).json({ error: "키프레임 이미지가 없습니다" });
+
+    // ANIM_PROMPT에서 씬별 모션 프롬프트 로드
+    let motionPrompt = "";
+    const animRecord = await prisma.generatedContent.findFirst({
+      where: { episodeId, contentType: "ANIM_PROMPT" },
+      orderBy: { createdAt: "desc" },
+    });
+    if (animRecord) {
+      const scenePrompts = parseAnimPromptByScene(animRecord.content);
+      motionPrompt = scenePrompts.get(sceneNumber)?.motion ?? "";
+      if (motionPrompt) console.log(`[Veo] 씬 ${sceneNumber} 모션 프롬프트 ANIM_PROMPT에서 로드`);
+    }
+    if (!motionPrompt) motionPrompt = "Slow cinematic pan, gentle ambient motion";
+
+    const imageBuffer = fs.readFileSync(`/app${keyframe.imageUrl}`);
+    const createdClips = [];
+
+    for (let i = 0; i < clipsCount; i++) {
+      console.log(`[Veo] 씬 ${sceneNumber} 클립 ${i + 1}/${clipsCount} 시작`);
+      const veoJobId = await veoStart(imageBuffer, motionPrompt, durationSec);
+      const clip = await prisma.sceneVideoClip.create({
+        data: {
+          keyframeId: keyframe.id,
+          episodeId,
+          sceneNumber,
+          veoJobId,
+          status: "PROCESSING",
+          durationSec,
+        },
+      });
+      createdClips.push(clip);
+    }
+
+    res.status(202).json({
+      message: `씬 ${sceneNumber}: ${clipsCount}개 클립 생성 시작`,
+      clips: createdClips,
+      sceneNumber,
+      totalTarget: clipsCount,
+    });
+  } catch (err) { next(err); }
+}
+
+/**
  * 씬 N의 완료된 클립(여러 개)을 하나로 이어 붙여 씬 단일 클립 생성
  * POST /api/v1/episodes/:id/merge-scene/:sceneNo
  *
