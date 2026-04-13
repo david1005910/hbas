@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "react-router-dom";
 import { Download, Play, Send, RefreshCw, ExternalLink, Loader2 } from "lucide-react";
 import { PageWrapper } from "../components/layout/PageWrapper";
 import { projectsApi } from "../api/projects";
@@ -9,15 +10,37 @@ const REMOTION_STUDIO_URL =
   (import.meta.env.VITE_REMOTION_URL as string) || "http://localhost:3002";
 
 export function VideoStudio() {
+  const location = useLocation();
+  const incomingProps = location.state as (RemotionProps & { fromKeyframe?: boolean }) | null;
+
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
-  const [selectedEpisodeId, setSelectedEpisodeId] = useState<string>("");
-  const [koreanText, setKoreanText] = useState("");
-  const [hebrewText, setHebrewText] = useState("");
-  const [videoFileName, setVideoFileName] = useState("");          // 빈 문자열 = 그라데이션 배경
-  const [audioFileName, setAudioFileName] = useState("narration.mp3");
+  const [selectedEpisodeId, setSelectedEpisodeId] = useState<string>(incomingProps?.episodeId ?? "");
+  const [koreanText, setKoreanText] = useState(incomingProps?.koreanText ?? "");
+  const [hebrewText, setHebrewText] = useState(incomingProps?.hebrewText ?? "");
+  const [videoFileName, setVideoFileName] = useState(incomingProps?.videoFileName ?? "");
+  const [audioFileName, setAudioFileName] = useState(incomingProps?.audioFileName ?? "narration.mp3");
   const [iframeSrc, setIframeSrc] = useState(REMOTION_STUDIO_URL);
   const [renderStatus, setRenderStatus] = useState<RenderStatus | null>(null);
+  const [fromKeyframeNotice, setFromKeyframeNotice] = useState(!!incomingProps?.fromKeyframe);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 키프레임 갤러리에서 넘어온 경우 — 자동으로 Remotion 스튜디오로 전송
+  useEffect(() => {
+    if (!incomingProps?.fromKeyframe) return;
+    remotionApi.sendProps({
+      koreanText: incomingProps.koreanText ?? "",
+      hebrewText: incomingProps.hebrewText ?? "",
+      videoFileName: incomingProps.videoFileName ?? "",
+      audioFileName: incomingProps.audioFileName ?? "narration.mp3",
+      episodeId: incomingProps.episodeId,
+    }).then(() => {
+      setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`);
+    }).catch(() => {});
+    // 5초 후 알림 배너 숨김
+    const t = setTimeout(() => setFromKeyframeNotice(false), 5000);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 프로젝트 목록
   const { data: projects } = useQuery({
@@ -87,7 +110,9 @@ export function VideoStudio() {
   return (
     <PageWrapper
       title="비디오 스튜디오"
-      subtitle="에피소드 데이터를 Remotion으로 전송하고 영상을 렌더링합니다"
+      subtitle={incomingProps?.fromKeyframe
+        ? `키프레임 씬 미리보기 — ${incomingProps.videoFileName ?? ""}`
+        : "에피소드 데이터를 Remotion으로 전송하고 영상을 렌더링합니다"}
       action={
         <a
           href={REMOTION_STUDIO_URL}
@@ -100,6 +125,15 @@ export function VideoStudio() {
         </a>
       }
     >
+      {/* 키프레임 갤러리에서 넘어온 경우 알림 배너 */}
+      {fromKeyframeNotice && (
+        <div className="flex items-center gap-2 mb-4 px-4 py-2.5 bg-blue-500/15 border border-blue-500/30 rounded-xl text-blue-300 text-sm font-body">
+          <span className="text-base">🖼</span>
+          <span>키프레임 미리보기 로드됨 — Remotion Studio에 자동 전송되었습니다.</span>
+          <button onClick={() => setFromKeyframeNotice(false)} className="ml-auto text-blue-400/60 hover:text-blue-300">✕</button>
+        </div>
+      )}
+
       <div className="flex gap-5 h-[calc(100vh-160px)]">
         {/* 좌측: 컨트롤 패널 */}
         <div className="w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto">

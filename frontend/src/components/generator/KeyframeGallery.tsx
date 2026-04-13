@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Image, RefreshCw, Check, Zap, RotateCcw, MonitorPlay, ExternalLink, Loader2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Image, RefreshCw, Check, Zap, RotateCcw, MonitorPlay, Loader2 } from "lucide-react";
 import { keyframesApi, streamKeyframeGeneration } from "../../api/keyframes";
 import { remotionApi } from "../../api/remotion";
 import type { SceneKeyframe } from "../../types";
@@ -19,6 +20,7 @@ const REMOTION_STUDIO_URL =
   (import.meta.env.VITE_REMOTION_URL as string) || "http://localhost:3002";
 
 export function KeyframeGallery({ episodeId, initialKeyframes, onUpdate }: Props) {
+  const navigate = useNavigate();
   const [keyframes, setKeyframes] = useState<SceneKeyframe[]>(initialKeyframes);
   const [sceneStates, setSceneStates] = useState<Record<number, SceneState>>({});
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
@@ -87,14 +89,19 @@ export function KeyframeGallery({ episodeId, initialKeyframes, onUpdate }: Props
   async function handleSendToStudio(keyframe: SceneKeyframe) {
     setStudioSending(keyframe.id);
     setStudioSent(null);
+    setGlobalError("");
     try {
-      await remotionApi.sendKeyframe(keyframe.id);
+      const result = await remotionApi.sendKeyframe(keyframe.id);
       setStudioSent(keyframe.id);
-      // 3초 후 sent 상태 초기화
-      setTimeout(() => setStudioSent(null), 3000);
+      // 비디오 스튜디오 페이지로 이동 (props 전달)
+      navigate("/video-studio", {
+        state: {
+          ...result.props,
+          fromKeyframe: true,
+        },
+      });
     } catch (e: any) {
       setGlobalError(`스튜디오 전송 실패: ${e?.response?.data?.error ?? e.message}`);
-    } finally {
       setStudioSending(null);
     }
   }
