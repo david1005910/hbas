@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import * as fs from "fs";
 import * as path from "path";
+import * as os from "os";
 import { parseAnimPromptByScene } from "../utils/promptBuilder";
 import { startVideoGeneration as veoStart, extendVideo as veoExtend, pollVideoStatus, downloadVideoFromGcs } from "../services/veo.service";
 import {
@@ -10,9 +11,10 @@ import {
   addNarrationSegmentToClip,
   getMediaDuration,
   mixWithBackgroundMusic,
+  extractLastFrame,
 } from "../services/ffmpeg.service";
 import { getFinalEpisodePath, saveVideo } from "../utils/imageStorage";
-import { buildSceneSrt } from "../utils/srtParser";
+import { buildSceneSrt, parseSrt } from "../utils/srtParser";
 import { prisma } from "../config/database";
 import { GCS_OUTPUT_BUCKET, TARGET_SCENE_DURATION } from "../config/vertexai";
 
@@ -166,6 +168,40 @@ export async function getVideoStatus(req: Request, res: Response, next: NextFunc
         },
       });
       console.log(`[Veo] 씬 ${clip.sceneNumber} 완료 (총 ${finalDuration}초)`);
+
+      // ── 연속 체인: 이전 클립 마지막 프레임 → 다음 클립 입력 이미지 ──────────
+      if (clip.seqOrder > 0 && clip.seqOrder < clip.seqTotal && filePath) {
+        try {
+          const ts = Date.now();
+          const lastFramePath = path.join(os.tmpdir(), `lastframe_s${clip.sceneNumber}_${ts}.png`);
+          await extractLastFrame(filePath, lastFramePath);
+          const nextImageBuf = fs.readFileSync(lastFramePath);
+          fs.unlinkSync(lastFramePath);
+
+          const kf = await prisma.sceneKeyframe.findUnique({ where: { id: clip.keyframeId } });
+          const nextPrompt = kf?.promptUsed?.split("\n")[0] ?? "Slow cinematic pan, gentle ambient motion";
+
+          const nextJobId = await veoStart(nextImageBuf, nextPrompt, clip.durationSec as 8 | 6 | 7 | 5);
+          const nextClip = await prisma.sceneVideoClip.create({
+            data: {
+              keyframeId: clip.keyframeId,
+              episodeId: clip.episodeId,
+              sceneNumber: clip.sceneNumber,
+              veoJobId: nextJobId,
+              status: "PROCESSING",
+              durationSec: clip.durationSec,
+              seqOrder: clip.seqOrder + 1,
+              seqTotal: clip.seqTotal,
+            },
+          });
+          console.log(`[Veo] 씬 ${clip.sceneNumber} 연속 ${clip.seqOrder + 1}/${clip.seqTotal} 시작 (job=${nextJobId})`);
+          return res.json({ ...updated, nextClip });
+        } catch (chainErr: any) {
+          console.error(`[Veo] 씬 ${clip.sceneNumber} 연속 체인 실패:`, chainErr?.message ?? chainErr);
+          // 체인 실패 시 현재 완료 클립만 반환
+        }
+      }
+
       return res.json(updated);
     }
 
@@ -181,6 +217,44 @@ export async function listVideoClips(req: Request, res: Response, next: NextFunc
     });
     res.json(clips);
   } catch (err) { next(err); }
+}
+
+/**
+ * SRT_KO 글자 수 비례로 나레이션 구간 분배
+ * - 씬별 자막 텍스트 글자 수에 비례해 나레이션 구간 분배
+ * - SRT_KO 없으면 균등 분할 fallback
+ */
+async function getNarrationSegments(
+  episodeId: string,
+  sceneNumbers: number[],
+  totalDuration: number
+): Promise<Array<{ startSec: number; durSec: number }>> {
+  const srtKo = await prisma.generatedContent.findFirst({
+    where: { episodeId, contentType: "SRT_KO" },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (srtKo) {
+    const entries = parseSrt(srtKo.content);
+    const lengths = sceneNumbers.map((sceneNo) => {
+      const entry = entries.find((e) => e.index === sceneNo) ?? entries[sceneNo - 1];
+      return Math.max(1, (entry?.text ?? "").replace(/\s/g, "").length);
+    });
+    const totalChars = lengths.reduce((a, b) => a + b, 0);
+    const segments: Array<{ startSec: number; durSec: number }> = [];
+    let cursor = 0;
+    for (const len of lengths) {
+      const dur = (len / totalChars) * totalDuration;
+      segments.push({ startSec: cursor, durSec: dur });
+      cursor += dur;
+    }
+    console.log(`[Narration] SRT_KO 비례 분배: 씬별 ${segments.map((s, i) => `씬${sceneNumbers[i]}=${s.durSec.toFixed(1)}s`).join(", ")}`);
+    return segments;
+  }
+
+  // fallback: 균등 분할
+  const dur = totalDuration / sceneNumbers.length;
+  return sceneNumbers.map((_, i) => ({ startSec: i * dur, durSec: dur }));
 }
 
 /** 에피소드의 유효한 BGM 경로 반환 (커스텀 → 환경변수 기본 순) */
@@ -378,10 +452,11 @@ export async function addNarrationToClips(req: Request, res: Response, next: Nex
     });
     if (clips.length === 0) return res.status(400).json({ error: "완료된 클립이 없습니다" });
 
-    // 나레이션 전체 길이를 씬 수로 균등 분할
+    // SRT_KO 글자 수 비례로 나레이션 구간 분배 (자막↔나레이션 동기화)
     const totalDuration = getMediaDuration(narrationLocalPath);
-    const segmentDur = totalDuration / clips.length;
-    console.log(`[Narration] 총 ${totalDuration.toFixed(1)}s → 씬당 ${segmentDur.toFixed(1)}s`);
+    const sceneNumbers = clips.map((c) => c.sceneNumber);
+    const segments = await getNarrationSegments(req.params.id, sceneNumbers, totalDuration);
+    console.log(`[Narration] 총 ${totalDuration.toFixed(1)}s → ${clips.length}개 씬에 비례 분배`);
 
     const results: string[] = [];
 
@@ -394,7 +469,7 @@ export async function addNarrationToClips(req: Request, res: Response, next: Nex
         ? `/app${clip.subClipUrl}`
         : `/app${clip.clipUrl}`;
 
-      const segmentStart = i * segmentDur;
+      const { startSec: segmentStart, durSec: segmentDur } = segments[i];
       const clipDir = path.dirname(`/app${clip.clipUrl}`);
       const narrOutputPath = path.join(clipDir, `scene_${clip.sceneNumber}_narr.mp4`);
 
@@ -487,8 +562,9 @@ export async function addNarrationToSingleClip(req: Request, res: Response, next
     });
     const clipIndex = allClips.findIndex((c) => c.id === clip.id);
     const totalDuration = getMediaDuration(narrationLocalPath);
-    const segmentDur = totalDuration / allClips.length;
-    const segmentStart = clipIndex * segmentDur;
+    const sceneNumbers = allClips.map((c) => c.sceneNumber);
+    const segments = await getNarrationSegments(clip.episodeId, sceneNumbers, totalDuration);
+    const { startSec: segmentStart, durSec: segmentDur } = segments[clipIndex];
 
     const baseClipPath = clip.subClipUrl && fs.existsSync(`/app${clip.subClipUrl}`)
       ? `/app${clip.subClipUrl}`
@@ -574,27 +650,26 @@ export async function generateSceneClips(req: Request, res: Response, next: Next
     if (!motionPrompt) motionPrompt = "Slow cinematic pan, gentle ambient motion";
 
     const imageBuffer = fs.readFileSync(`/app${keyframe.imageUrl}`);
-    const createdClips = [];
 
-    for (let i = 0; i < clipsCount; i++) {
-      console.log(`[Veo] 씬 ${sceneNumber} 클립 ${i + 1}/${clipsCount} 시작`);
-      const veoJobId = await veoStart(imageBuffer, motionPrompt, durationSec);
-      const clip = await prisma.sceneVideoClip.create({
-        data: {
-          keyframeId: keyframe.id,
-          episodeId,
-          sceneNumber,
-          veoJobId,
-          status: "PROCESSING",
-          durationSec,
-        },
-      });
-      createdClips.push(clip);
-    }
+    // 연속 체인: 첫 번째 클립만 시작, 이후 클립은 완료 시 자동 체인
+    console.log(`[Veo] 씬 ${sceneNumber} 연속 클립 1/${clipsCount} 시작 (키프레임 이미지)`);
+    const veoJobId = await veoStart(imageBuffer, motionPrompt, durationSec);
+    const firstClip = await prisma.sceneVideoClip.create({
+      data: {
+        keyframeId: keyframe.id,
+        episodeId,
+        sceneNumber,
+        veoJobId,
+        status: "PROCESSING",
+        durationSec,
+        seqOrder: 1,
+        seqTotal: clipsCount,
+      },
+    });
 
     res.status(202).json({
-      message: `씬 ${sceneNumber}: ${clipsCount}개 클립 생성 시작`,
-      clips: createdClips,
+      message: `씬 ${sceneNumber}: ${clipsCount}개 연속 클립 시작 — 1번 완료 시 자동으로 다음 클립 생성`,
+      clips: [firstClip],
       sceneNumber,
       totalTarget: clipsCount,
     });
@@ -766,8 +841,9 @@ export async function produceFinal(req: Request, res: Response, next: NextFuncti
 
     if (narrationLocalPath && fs.existsSync(narrationLocalPath)) {
       const totalDuration = getMediaDuration(narrationLocalPath);
-      const segmentDur = totalDuration / clips.length;
-      send("narration", `  나레이션 총 ${totalDuration.toFixed(1)}s → 씬당 ${segmentDur.toFixed(1)}s`);
+      const sceneNums = clips.map((c) => c.sceneNumber);
+      const segments = await getNarrationSegments(episodeId, sceneNums, totalDuration);
+      send("narration", `  나레이션 총 ${totalDuration.toFixed(1)}s → SRT_KO 비례 분배`);
 
       for (let i = 0; i < clips.length; i++) {
         const clip = updatedClips[i];
@@ -777,7 +853,7 @@ export async function produceFinal(req: Request, res: Response, next: NextFuncti
           ? `/app${(clip as any).subClipUrl}`
           : `/app${clip.clipUrl}`;
 
-        const segmentStart = i * segmentDur;
+        const { startSec: segmentStart, durSec: segmentDur } = segments[i];
         const narrOutputPath = path.join(path.dirname(`/app${clip.clipUrl}`), `scene_${clip.sceneNumber}_narr.mp4`);
 
         send("narration", `  씬 ${clip.sceneNumber} 나레이션 합성 중...`);

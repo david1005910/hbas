@@ -91,40 +91,101 @@ function splitTextIntoChunks(text: string, chunks: number): string[] {
     const slice = words.slice(i * chunkSize, (i + 1) * chunkSize);
     result.push(slice.join(" "));
   }
-  // 나머지 빈 슬롯 채우기
   while (result.length < chunks) result.push("");
   return result;
 }
 
 /**
- * 한국어 + 히브리어 자막을 합쳐 ASS 형식으로 생성
- * - 자막 텍스트를 N등분하여 클립 전체에 순서대로 표시
- * - 클립 길이에 따라 청크 수 자동 조정:
- *     ≤10s → 3초/청크  (2–3개)
- *     ≤20s → 4초/청크  (3–5개)
- *     ≤35s → 6초/청크  (4–6개)
- *     >35s  → 8초/청크  (5개 고정 cap)
- * - 한국어: 하단 중앙 (흰색)
- * - 히브리어: 한국어 위 (금색, RTL 자동 처리)
+ * 한국어 텍스트를 글자 수(공백 제외) 기준으로 분할
+ * - maxChars(기본 13): 한 청크 최대 글자 수
+ * - 단어 경계를 유지하면서 13자 초과 시 새 청크 시작 → 10~15자 범위 유지
  */
-function chunkSecForDuration(clipDurationSec: number): number {
-  if (clipDurationSec <= 10)  return 3;
-  if (clipDurationSec <= 20)  return 4;
-  if (clipDurationSec <= 35)  return 6;
-  return 8;  // 40s 이상 병합 클립
+function splitTextByCharLimit(text: string, maxChars = 13): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    const displayLen = candidate.replace(/\s/g, "").length;
+
+    if (displayLen > maxChars && current) {
+      chunks.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks.length > 0 ? chunks : [""];
 }
 
+/**
+ * 구두점(쉼표, 마침표) 우선으로 자막 분할
+ * 1단계: , . ， 。 뒤에서 분리 → 구두점은 앞 조각에 포함
+ * 2단계: 분리된 조각이 maxChars 초과 시 글자 수 기준으로 추가 분할
+ * 3단계: 구두점 없는 텍스트는 글자 수 기준 분할 fallback
+ *
+ * 예: "가나안 땅으로, 그곳에서 살며. 하나님의 말씀을"
+ *   → ["가나안 땅으로,", "그곳에서 살며.", "하나님의 말씀을"]
+ */
+function splitTextByPunctuation(text: string, maxChars = 15): string[] {
+  const results: string[] = [];
+
+  // 쉼표·마침표(전각 포함) 바로 뒤에서 분리, 구두점은 앞 조각에 유지
+  const segments = text.split(/(?<=[,.\uff0c\u3002])\s*/u).map((s) => s.trim()).filter(Boolean);
+
+  for (const seg of segments) {
+    const cleanLen = seg.replace(/\s/g, "").length;
+    if (cleanLen <= maxChars) {
+      results.push(seg);
+    } else {
+      // 너무 길면 글자 수 기준으로 추가 분할
+      results.push(...splitTextByCharLimit(seg, maxChars));
+    }
+  }
+
+  return results.length > 0 ? results : [""];
+}
+
+// TTS 발화 속도 상수 (speakingRate 0.62 기준 한국어 약 3.5자/초)
+const CHARS_PER_SEC = 3.5;
+const COMMA_BREAK_SEC = 0.4;   // SSML <break time="400ms"/>
+const PERIOD_BREAK_SEC = 0.7;  // SSML <break time="700ms"/>
+
+/**
+ * 한국어 + 히브리어 자막을 합쳐 ASS 형식으로 생성
+ *
+ * 타이밍 방식 (나레이션 TTS 발화 시간과 정확히 동기화):
+ *   - 각 청크 표시 시간 = 글자수 / CHARS_PER_SEC + SSML break 시간
+ *   - 마침표: +0.7s / 쉼표: +0.4s  →  나레이션 pause와 동일
+ *   - 전체 자막 구간이 예상 발화 시간에 맞춰 끝남 (클립 길이와 무관)
+ */
 export function buildSceneAss(
   koText: string,
   heText: string | undefined,
   clipDurationSec = 8
 ): string {
-  const chunkSec = chunkSecForDuration(clipDurationSec);
-  const usable = Math.max(chunkSec, clipDurationSec - 0.5);
-  const numChunks = Math.max(1, Math.ceil(usable / chunkSec));
+  // 한국어: 구두점(쉼표·마침표) 우선 분할, 그 외 15자 기준 분할
+  const koChunks = splitTextByPunctuation(koText, 15);
+  const numChunks = koChunks.length;
 
-  const koChunks = splitTextIntoChunks(koText, numChunks);
+  // 히브리어: 동일 청크 수로 균등 분할
   const heChunks = heText ? splitTextIntoChunks(heText, numChunks) : null;
+
+  // ── 각 청크의 예상 발화 시간 계산 (TTS 속도 + SSML pause 반영) ──────────
+  const chunkDurations = koChunks.map((chunk) => {
+    const charCount = Math.max(1, chunk.replace(/\s/g, "").length);
+    const trimmed = chunk.trimEnd();
+    const breakSec = /[.\u3002]$/.test(trimmed) ? PERIOD_BREAK_SEC
+                   : /[,\uff0c]$/.test(trimmed) ? COMMA_BREAK_SEC
+                   : 0;
+    return (charCount / CHARS_PER_SEC) + breakSec;
+  });
+
+  // 예상 총 발화 시간 (클립 길이를 초과하지 않도록 cap)
+  const estimatedTotal = chunkDurations.reduce((a, b) => a + b, 0);
+  const usable = Math.min(estimatedTotal, clipDurationSec - 0.4);
 
   const header = `[Script Info]
 ScriptType: v4.00+
@@ -134,17 +195,24 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
-Style: Korean,Noto Sans CJK KR,44,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,30,30,30,1
-Style: Hebrew,Noto Sans,38,&H0000D4FF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,30,30,90,1
+Style: Korean,Noto Sans CJK KR,70,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,4,2,2,30,30,50,1
+Style: Hebrew,Noto Sans,58,&H0000D4FF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,4,2,2,30,30,130,1
 
 [Events]
 Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text`;
 
   const dialogues: string[] = [header];
 
+  // 비율 보정: estimatedTotal이 usable보다 클 경우 비율 축소
+  const scale = usable / estimatedTotal;
+
+  let cursor = 0.3;
   for (let i = 0; i < numChunks; i++) {
-    const chunkStart = 0.5 + i * chunkSec;
-    const chunkEnd   = Math.min(chunkStart + chunkSec, clipDurationSec - 0.1);
+    const chunkDur = chunkDurations[i] * scale;
+    const chunkStart = cursor;
+    const chunkEnd   = Math.min(cursor + chunkDur, clipDurationSec - 0.1);
+    cursor += chunkDur;
+
     const s = toAssTs(chunkStart);
     const e = toAssTs(chunkEnd);
     const ko = koChunks[i];

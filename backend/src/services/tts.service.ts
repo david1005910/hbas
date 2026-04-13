@@ -1,7 +1,9 @@
 import axios from "axios";
 import * as fs from "fs";
 import * as path from "path";
+import * as os from "os";
 import { getGcpAccessToken } from "../config/vertexai";
+import { generateSilenceMp3, concatAudioFiles } from "./ffmpeg.service";
 
 const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const AUDIO_BASE = process.env.AUDIO_STORAGE_PATH || "/app/storage/audio";
@@ -15,7 +17,7 @@ const NARRATION_VOICE = {
 
 const NARRATION_AUDIO_CONFIG = {
   audioEncoding: "MP3",
-  speakingRate: 0.82,   // Chirp3-HD는 pitch 미지원 — 속도로 무게감 조절
+  speakingRate: 0.62,   // 0.72→0.62: 더 천천히, 장중한 성경 다큐 나레이션
   volumeGainDb: 1.5,
 };
 
@@ -62,6 +64,13 @@ function cleanNarrationText(text: string): string {
   t = t.replace(/^\d+\s*$/gm, "");
   t = t.replace(/\d{2}:\d{2}:\d{2}[,.:]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,.:]\d{3}/g, "");
 
+  // 1-1. 에피소드 제목·타이틀 줄 전체 제거
+  //      "에피소드 제목:", "제목:", "타이틀:", "Title:", "Episode:", "에피소드:" 등
+  t = t.replace(/^\*{0,3}(에피소드\s*제목|에피소드|제목|타이틀|Title|Episode)\s*[:：]?[^\n]*\n?/gim, "");
+
+  // 1-2. "나레이션:", "해설:", "내레이션:" 접두어만 제거 (텍스트는 유지)
+  t = t.replace(/^(나레이션|내레이션|해설|Narration)\s*[:：]\s*/gim, "");
+
   // 2. 씬/Scene 헤더 제거: "씬 1:", "[씬 2]", "**씬 3**", "Scene 1:", "Scene1." 등
   t = t.replace(/\*{0,3}(씬|Scene)\s*\d+\s*[:\.\*]?\*{0,3}/gi, "");
   t = t.replace(/[\[\(](씬|Scene)\s*\d+[\]\)]/gi, "");
@@ -103,6 +112,23 @@ function cleanNarrationText(text: string): string {
   return t;
 }
 
+/**
+ * Google TTS API 단건 호출 → MP3 Buffer 반환
+ * Chirp3-HD는 SSML 미지원 → plain text 사용
+ */
+async function callTtsApi(text: string, token: string): Promise<Buffer> {
+  const response = await axios.post(
+    TTS_ENDPOINT,
+    {
+      input: { text },
+      voice: NARRATION_VOICE,
+      audioConfig: NARRATION_AUDIO_CONFIG,
+    },
+    { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
+  );
+  return Buffer.from(response.data.audioContent, "base64");
+}
+
 export async function generateNarration(
   episodeId: string,
   inputText: string
@@ -114,8 +140,7 @@ export async function generateNarration(
   const base = isSrt ? extractSrtText(inputText) : inputText.trim();
   const extracted = cleanNarrationText(base);
 
-  // Google TTS 단건 한도: 5000 bytes (한글 3바이트/자)
-  // 바이트 기준으로 4800 bytes까지만 사용
+  // 바이트 한도 적용 (한글 3바이트/자, 4800 bytes)
   let cleanedText = "";
   let byteCount = 0;
   for (const char of extracted) {
@@ -125,37 +150,49 @@ export async function generateNarration(
     byteCount += charBytes;
   }
 
-  console.log(`[TTS] 나레이션 텍스트 정제 완료: ${extracted.length}자 → ${cleanedText.length}자 (TTS 전달)`);
-  console.log(`[TTS] 샘플: "${cleanedText.slice(0, 80)}..."`);
+  console.log(`[TTS] 텍스트 정제: ${extracted.length}자 → ${cleanedText.length}자`);
 
-  let response;
-  try {
-    response = await axios.post(
-      TTS_ENDPOINT,
-      {
-        input: { text: cleanedText },
-        voice: NARRATION_VOICE,
-        audioConfig: NARRATION_AUDIO_CONFIG,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-  } catch (err: any) {
-    console.error(`[TTS] API 오류 ${err.response?.status}:`, JSON.stringify(err.response?.data).slice(0, 300));
-    throw err;
-  }
-
-  const audioBase64: string = response.data.audioContent;
-  const audioBuffer = Buffer.from(audioBase64, "base64");
+  // ── 쉼표·마침표 기준 분절 → 각각 TTS + 사이에 묵음 삽입 ────────────────
+  // Chirp3-HD는 SSML break 미지원이므로 FFmpeg로 직접 pause 삽입
+  const rawSegments = cleanedText.split(/(?<=[,.\u3002\uff0c])\s*/u).filter((s) => s.trim());
 
   const dir = path.join(AUDIO_BASE, episodeId);
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, "narration.mp3");
-  fs.writeFileSync(filePath, audioBuffer);
+
+  const ts = Date.now();
+  const tempFiles: string[] = [];
+
+  try {
+    for (let i = 0; i < rawSegments.length; i++) {
+      const seg = rawSegments[i].trim();
+      if (!seg) continue;
+
+      // 분절별 TTS
+      console.log(`[TTS] 분절 ${i + 1}/${rawSegments.length}: "${seg.slice(0, 30)}..."`);
+      const buf = await callTtsApi(seg, token);
+      const segPath = path.join(os.tmpdir(), `narr_seg_${ts}_${i}.mp3`);
+      fs.writeFileSync(segPath, buf);
+      tempFiles.push(segPath);
+
+      // 마지막 분절이 아니면 묵음 삽입
+      if (i < rawSegments.length - 1) {
+        const endsWithPeriod = /[.\u3002]$/.test(seg);
+        const silDur = endsWithPeriod ? 0.7 : 0.4;   // 마침표 700ms / 쉼표 400ms
+        const silPath = path.join(os.tmpdir(), `narr_sil_${ts}_${i}.mp3`);
+        await generateSilenceMp3(silDur, silPath);
+        tempFiles.push(silPath);
+        console.log(`[TTS] 묵음 삽입 ${silDur * 1000}ms (${endsWithPeriod ? "마침표" : "쉼표"})`);
+      }
+    }
+
+    // 모든 분절 + 묵음 연결
+    await concatAudioFiles(tempFiles, filePath);
+  } finally {
+    for (const f of tempFiles) {
+      if (fs.existsSync(f)) try { fs.unlinkSync(f); } catch {}
+    }
+  }
 
   console.log(`[TTS] 나레이션 저장 완료: ${filePath} (${audioBuffer.length} bytes)`);
   return filePath;

@@ -156,6 +156,66 @@ export async function mixWithBackgroundMusic(
   });
 }
 
+/**
+ * 영상 클립의 마지막 프레임을 JPEG 파일로 추출
+ * - 연속 클립 체인에서 이전 클립의 마지막 장면을 다음 클립 입력 이미지로 사용
+ */
+export async function extractLastFrame(clipPath: string, outputPath: string): Promise<void> {
+  const duration = getMediaDuration(clipPath);
+  const seekTo = Math.max(0, duration - 0.15); // 마지막 프레임 (0.15초 전)
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(clipPath)
+      .inputOptions([`-ss ${seekTo}`])
+      .outputOptions(["-vframes 1", "-f image2"])
+      .output(outputPath)
+      .on("end", () => resolve())
+      .on("error", (err) => reject(err))
+      .run();
+  });
+}
+
+/**
+ * 지정 길이(초)의 무음 MP3 파일 생성 (나레이션 구두점 pause용)
+ */
+export async function generateSilenceMp3(durationSec: number, outputPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(`aevalsrc=0:c=mono:r=24000:d=${durationSec}`)
+      .inputOptions(["-f lavfi"])
+      .outputOptions(["-c:a libmp3lame", "-q:a 2"])
+      .output(outputPath)
+      .on("end", () => resolve())
+      .on("error", (err) => reject(err))
+      .run();
+  });
+}
+
+/**
+ * MP3 파일 목록을 순서대로 연결 (나레이션 구간 + 묵음 이어붙이기)
+ */
+export async function concatAudioFiles(audioPaths: string[], outputPath: string): Promise<void> {
+  if (audioPaths.length === 0) throw new Error("연결할 오디오 파일이 없습니다");
+  if (audioPaths.length === 1) {
+    fs.copyFileSync(audioPaths[0], outputPath);
+    return;
+  }
+
+  const concatFile = path.join(os.tmpdir(), `concat_audio_${Date.now()}.txt`);
+  fs.writeFileSync(concatFile, audioPaths.map((p) => `file '${p}'`).join("\n"));
+
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(concatFile)
+      .inputOptions(["-f concat", "-safe 0"])
+      .outputOptions(["-c:a libmp3lame", "-q:a 2"])
+      .output(outputPath)
+      .on("end", () => { try { fs.unlinkSync(concatFile); } catch {} resolve(); })
+      .on("error", (err) => { try { fs.unlinkSync(concatFile); } catch {} reject(err); })
+      .run();
+  });
+}
+
 export async function mergeVideoClips(
   clipPaths: string[],
   outputPath: string

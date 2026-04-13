@@ -19,9 +19,14 @@ const STATUS_ICON: Record<string, React.ReactNode> = {
 };
 
 function clipStatusLabel(clip: import("../../types").SceneVideoClip): string {
-  if (clip.status === "PROCESSING" && clip.extendCount > 0) {
-    const currentSec = 8 + clip.extendCount * 7;
-    return `연장 중 (${clip.extendCount}회 완료 · ${currentSec}s)`;
+  if (clip.status === "PROCESSING") {
+    if (clip.seqOrder > 0 && clip.seqTotal > 0) {
+      return `연속 생성 중 (${clip.seqOrder}/${clip.seqTotal})`;
+    }
+    if (clip.extendCount > 0) {
+      const currentSec = 8 + clip.extendCount * 7;
+      return `연장 중 (${clip.extendCount}회 완료 · ${currentSec}s)`;
+    }
   }
   if (clip.status === "COMPLETED") {
     return `완료 (${clip.durationSec}초)`;
@@ -61,7 +66,14 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
       for (const clip of processing) {
         try {
           const updated = await videoClipsApi.status(clip.id);
-          setClips((prev) => prev.map((c) => c.id === updated.id ? updated : c));
+          setClips((prev) => {
+            let next = prev.map((c) => c.id === updated.id ? updated : c);
+            // 연속 체인: 다음 클립이 생성됐으면 목록에 추가
+            if (updated.nextClip && !next.find((c) => c.id === updated.nextClip!.id)) {
+              next = [...next, updated.nextClip];
+            }
+            return next;
+          });
         } catch {
           // 폴링 오류는 무시 (다음 interval에 재시도)
         }
@@ -94,7 +106,7 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
     try {
       const res = await videoClipsApi.generateSceneClips(episodeId, sceneNumber, CLIPS_PER_SCENE);
       setClips((prev) => [...prev, ...res.clips]);
-      setActionMsg(`✅ 씬 ${sceneNumber}: ${res.clips.length}개 클립 생성 시작 — 약 2~5분 소요`);
+      setActionMsg(`✅ 씬 ${sceneNumber}: ${res.totalTarget}개 연속 클립 생성 시작 — 각 클립 완료 후 자동으로 다음 클립 생성 (약 ${res.totalTarget * 2}~${res.totalTarget * 3}분)`);
     } catch (e: any) {
       setActionMsg(`⚠️ 씬 ${sceneNumber} 생성 오류: ${e?.response?.data?.error ?? e.message}`);
     }
@@ -802,7 +814,13 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                             <>
                               <RefreshCw size={13} className="animate-spin" style={{ color: "#f0abfc" }} />
                               <span style={{ fontSize: "0.72rem", color: "#f0abfc" }} className="font-body">
-                                생성 중 ({completed.length + processing.length}/{CLIPS_PER_SCENE})
+                                {(() => {
+                                  const proc = processing[0];
+                                  if (proc?.seqOrder > 0 && proc?.seqTotal > 0) {
+                                    return `연속 생성 중 (${proc.seqOrder}/${proc.seqTotal})`;
+                                  }
+                                  return `생성 중 (${completed.length + processing.length}/${CLIPS_PER_SCENE})`;
+                                })()}
                               </span>
                             </>
                           )}
@@ -840,7 +858,14 @@ export function VideoClipManager({ episodeId, keyframes, initialClips, onUpdate 
                             <div style={{ height: "4px", borderRadius: "4px", background: "rgba(255,255,255,0.12)", overflow: "hidden" }}>
                               <div style={{
                                 height: "100%",
-                                width: `${(completed.length / CLIPS_PER_SCENE) * 100}%`,
+                                width: `${(() => {
+                                  const proc = processing[0];
+                                  if (proc?.seqOrder > 0 && proc?.seqTotal > 0) {
+                                    // 연속 모드: 이전 완료분 + 현재 진행 중 (0.5로 표현)
+                                    return ((proc.seqOrder - 1 + 0.5) / proc.seqTotal) * 100;
+                                  }
+                                  return (completed.length / CLIPS_PER_SCENE) * 100;
+                                })()}%`,
                                 background: "linear-gradient(90deg, #a855f7, #ec4899)",
                                 transition: "width 0.5s ease",
                                 borderRadius: "4px",

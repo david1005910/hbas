@@ -83,7 +83,10 @@ export interface SceneVideoClip {
   subClipUrl?: string | null;
   narrClipUrl?: string | null;
   durationSec: number;
+  seqOrder: number;   // 0=독립, 1~N=연속 체인 순서
+  seqTotal: number;   // 연속 체인 총 수 (0=독립)
   createdAt: string;
+  nextClip?: SceneVideoClip; // 체인 시작 시 API 응답에 포함
 }
 
 export type PipelineStep = "script" | "prompt" | "keyframe" | "video" | "srt" | "meta";

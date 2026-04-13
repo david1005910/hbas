@@ -27,6 +27,7 @@ services:
       - ./storage/audio:/app/storage/audio
       - ./storage/bgm:/app/storage/bgm
       - ./service-account.json:/app/service-account.json:ro
+      - /Users/david/Documents/my-video-project/my-video:/app/remotion-project
     env_file:
       - .env
     depends_on:
@@ -72,6 +73,21 @@ services:
       resources:
         limits:
           memory: 128M
+
+  remotion:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - /Users/david/Documents/my-video-project/my-video:/app
+    ports:
+      - "3002:3002"
+    command: sh -c "npm install && npx remotion studio --port 3002"
+    environment:
+      - NODE_ENV=development
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
 volumes:
   postgres_data:
