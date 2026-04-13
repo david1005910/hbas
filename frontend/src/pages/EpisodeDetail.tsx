@@ -173,6 +173,7 @@ export function EpisodeDetail() {
             episodeId={id!}
             existing={getContent("ANIM_PROMPT")}
             onDone={refresh}
+            onNextStep={() => setActiveTab("keyframes")}
           />
         )}
         {activeTab === "keyframes" && (
