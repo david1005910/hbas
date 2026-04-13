@@ -40,11 +40,13 @@ model BibleVerse {
   chapter    Int
   verse      Int
   hebrewText String    @db.Text         // BHS 히브리어 원문 (RTL)
-  koreanText String    @db.Text         // 한국어 번역
+  koreanText String    @db.Text         // 한국어 번역 (개역개정)
   actorTag   String?   @db.VarChar(200) // 언리얼 엔진 Actor 태그 (3D 오브젝트 연동)
+  // embedding: pgvector vector(768) — Gemini text-embedding-004 (managed via raw SQL)
   createdAt  DateTime  @default(now())
 
   @@unique([bookId, chapter, verse])
+  @@index([bookId, chapter])
   @@map("bible_verses")
 }
 
