@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import http from "http";
+import { prisma } from "../config/database";
 
 const PROJECT_PATH =
   process.env.REMOTION_PROJECT_PATH || "/app/remotion-project";
@@ -71,6 +72,71 @@ function httpRequest(
     if (body) req.write(JSON.stringify(body));
     req.end();
   });
+}
+
+// ─── 키프레임 → Remotion 스튜디오 전송 ──────────────────────────────────────
+
+export async function sendKeyframeToStudio(keyframeId: string): Promise<RemotionProps> {
+  const keyframe = await prisma.sceneKeyframe.findUnique({
+    where: { id: keyframeId },
+    include: { episode: { include: { contents: { orderBy: { createdAt: "desc" } } } } },
+  });
+  if (!keyframe) throw new Error("Keyframe not found");
+  if (!keyframe.imageUrl) throw new Error("Keyframe image not available");
+
+  // 1. 키프레임 이미지를 Remotion public 폴더로 복사
+  const srcPath = `/app${keyframe.imageUrl}`;
+  const destDir = path.join(PROJECT_PATH, "public");
+  const destFile = `preview_keyframe_${keyframe.sceneNumber}.png`;
+  const destPath = path.join(destDir, destFile);
+
+  fs.mkdirSync(destDir, { recursive: true });
+  fs.copyFileSync(srcPath, destPath);
+
+  // 2. SCRIPT 콘텐츠에서 씬별 한/히브리어 텍스트 추출 (없으면 에피소드 제목 사용)
+  const scriptContent = keyframe.episode.contents.find((c) => c.contentType === "SCRIPT");
+  const { koreanText, hebrewText } = extractSceneText(
+    scriptContent?.content ?? "",
+    keyframe.sceneNumber,
+    keyframe.episode.titleKo,
+    keyframe.episode.titleHe ?? ""
+  );
+
+  // 3. data.json 업데이트
+  const props: RemotionProps = {
+    koreanText,
+    hebrewText,
+    videoFileName: destFile,
+    audioFileName: "narration.mp3",
+    episodeId: keyframe.episodeId,
+  };
+  writeProps(props);
+  return props;
+}
+
+/** SCRIPT 텍스트에서 씬별 나레이션 추출 */
+function extractSceneText(
+  script: string,
+  sceneNumber: number,
+  fallbackKo: string,
+  fallbackHe: string
+): { koreanText: string; hebrewText: string } {
+  if (!script) return { koreanText: fallbackKo, hebrewText: fallbackHe };
+
+  // "씬 N:" 블록 찾기
+  const sceneRegex = new RegExp(
+    `씬\\s*${sceneNumber}[:\\s]([\\s\\S]*?)(?=씬\\s*\\d+[:\\s]|$)`,
+    "i"
+  );
+  const sceneBlock = script.match(sceneRegex)?.[1] ?? "";
+
+  const koMatch = sceneBlock.match(/나레이션\s*[\(（]KO[\)）]\s*:\s*(.+)/);
+  const heMatch = sceneBlock.match(/나레이션\s*[\(（]HE[\)）]\s*:\s*(.+)/);
+
+  return {
+    koreanText: koMatch?.[1]?.trim() || fallbackKo,
+    hebrewText: heMatch?.[1]?.trim() || fallbackHe,
+  };
 }
 
 // ─── 렌더링 시작 (비동기) ────────────────────────────────────────────────────

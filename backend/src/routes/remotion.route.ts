@@ -5,6 +5,7 @@ import {
   renderVideo,
   getRenderStatus,
   getDownloadUrl,
+  sendKeyframeToStudio,
 } from "../services/remotion.service";
 
 const router = Router();
@@ -54,6 +55,18 @@ router.get("/render/status", async (_req: Request, res: Response) => {
 // GET /api/v1/remotion/download-url — 다운로드 URL 반환
 router.get("/download-url", (_req: Request, res: Response) => {
   res.json({ url: getDownloadUrl() });
+});
+
+// POST /api/v1/remotion/send-keyframe — 키프레임을 스튜디오로 전송
+router.post("/send-keyframe", async (req: Request, res: Response) => {
+  try {
+    const { keyframeId } = req.body;
+    if (!keyframeId) return res.status(400).json({ error: "keyframeId 필수" });
+    const props = await sendKeyframeToStudio(keyframeId);
+    res.json({ success: true, props });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 export default router;

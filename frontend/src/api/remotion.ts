@@ -28,4 +28,8 @@ export const remotionApi = {
 
   // 브라우저에서 직접 Remotion 컨테이너에서 다운로드 (포트 3003)
   downloadUrl: () => "http://localhost:3003/download",
+
+  // 키프레임 → Remotion 스튜디오 전송
+  sendKeyframe: (keyframeId: string) =>
+    api.post<{ success: boolean; props: RemotionProps }>("/remotion/send-keyframe", { keyframeId }).then((r) => r.data),
 };
