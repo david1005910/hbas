@@ -4,6 +4,23 @@ import * as path from "path";
 import archiver from "archiver";
 import { prisma } from "../config/database";
 
+export async function updateContent(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { content } = req.body;
+    if (typeof content !== "string" || !content.trim()) {
+      return res.status(400).json({ error: "content 필드가 필요합니다" });
+    }
+    const updated = await prisma.generatedContent.update({
+      where: { id: req.params.id },
+      data: { content: content.trim() },
+    });
+    res.json({ id: updated.id, contentType: updated.contentType, content: updated.content });
+  } catch (err: any) {
+    if (err.code === "P2025") return res.status(404).json({ error: "Not found" });
+    next(err);
+  }
+}
+
 export async function downloadContent(req: Request, res: Response, next: NextFunction) {
   try {
     const content = await prisma.generatedContent.findUnique({ where: { id: req.params.id } });
