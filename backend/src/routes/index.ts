@@ -10,6 +10,7 @@ import downloadRouter from "./download.route";
 import bibleRouter from "./bible.route";
 import bgmRouter from "./bgm.route";
 import remotionRouter from "./remotion.route";
+import ragRouter from "./rag.route";
 
 const router = Router();
 
@@ -24,6 +25,7 @@ router.use("/contents", downloadRouter);
 router.use("/bible", bibleRouter);
 router.use("/episodes", bgmRouter);   // /episodes/:id/bgm
 router.use("/remotion", remotionRouter); // /remotion/props, /remotion/render, /remotion/download
+router.use("/rag", ragRouter);          // /rag/search, /rag/ingest, /rag/ingest-file, /rag/status
 
 router.get("/health", (_req, res) => res.json({ status: "ok" }));
 

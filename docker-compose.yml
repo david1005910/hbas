@@ -27,7 +27,8 @@ services:
       - ./storage/audio:/app/storage/audio
       - ./storage/bgm:/app/storage/bgm
       - ./service-account.json:/app/service-account.json:ro
-      - /Users/david/Documents/my-video-project/my-video:/app/remotion-project
+      - /Users/david/Documents/my-video-project/my-video/public:/app/remotion-project/public
+      - ./backend/data:/app/data
     env_file:
       - .env
     depends_on:
@@ -41,7 +42,7 @@ services:
           memory: 1G
 
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     environment:
       POSTGRES_DB: hbas_db
       POSTGRES_USER: hbas
@@ -75,19 +76,25 @@ services:
           memory: 128M
 
   remotion:
-    image: node:20-alpine
-    working_dir: /app
+    build:
+      context: /Users/david/Documents/my-video-project/my-video
+      dockerfile: Dockerfile
     volumes:
-      - /Users/david/Documents/my-video-project/my-video:/app
+      # 소스 코드만 마운트 (node_modules는 이미지에 유지 — Chrome 포함)
+      - /Users/david/Documents/my-video-project/my-video/src:/app/src
+      - /Users/david/Documents/my-video-project/my-video/public:/app/public
+      - /Users/david/Documents/my-video-project/my-video/render-server.mjs:/app/render-server.mjs
+      - /Users/david/Documents/my-video-project/my-video/remotion.config.ts:/app/remotion.config.ts
+      - /Users/david/Documents/my-video-project/my-video/tsconfig.json:/app/tsconfig.json
     ports:
       - "3002:3002"
-    command: sh -c "npm install && npx remotion studio --port 3002"
+      - "3003:3003"
     environment:
       - NODE_ENV=development
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 3G
 
 volumes:
   postgres_data:

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { PageWrapper } from "../components/layout/PageWrapper";
 import { HebrewText } from "../components/ui/HebrewText";
+import { BibleSearch } from "../components/bible/BibleSearch";
 import { episodesApi } from "../api/episodes";
 
 export function BibleBooks() {
@@ -11,6 +12,10 @@ export function BibleBooks() {
 
   return (
     <PageWrapper title="구약 성경 목록" subtitle="히브리어 마소라 본문 (BHS) 기준 39권">
+      {/* RAG 의미 검색 */}
+      <BibleSearch />
+
+      {/* 성경 목록 그리드 */}
       {isLoading ? (
         <p className="text-parchment/50 font-body">로딩 중...</p>
       ) : (
