@@ -2,7 +2,9 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "../config/database";
 
 const EMBED_MODEL = "text-embedding-004"; // 768-dim, multilingual
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!);
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!, {
+  apiVersion: "v1",
+});
 
 // ─── 임베딩 생성 ───────────────────────────────────────────────────────────────
 
