@@ -177,16 +177,39 @@ export async function extractLastFrame(clipPath: string, outputPath: string): Pr
 
 /**
  * 지정 길이(초)의 무음 MP3 파일 생성 (나레이션 구두점 pause용)
+ * - lavfi 미사용: 무음 WAV 버퍼를 직접 생성 후 MP3로 변환
  */
 export async function generateSilenceMp3(durationSec: number, outputPath: string): Promise<void> {
+  const sampleRate = 24000;
+  const numSamples = Math.ceil(sampleRate * durationSec);
+  const wavPath = outputPath.replace(/\.mp3$/i, "_sil.wav");
+
+  // PCM 16-bit mono WAV 생성 (전부 0 → 무음)
+  const dataSize = numSamples * 2; // 16-bit = 2 bytes/sample
+  const buf = Buffer.alloc(44 + dataSize);
+  buf.write("RIFF", 0);                          // ChunkID
+  buf.writeUInt32LE(36 + dataSize, 4);           // ChunkSize
+  buf.write("WAVE", 8);                          // Format
+  buf.write("fmt ", 12);                         // Subchunk1ID
+  buf.writeUInt32LE(16, 16);                     // Subchunk1Size (PCM)
+  buf.writeUInt16LE(1, 20);                      // AudioFormat (PCM=1)
+  buf.writeUInt16LE(1, 22);                      // NumChannels (mono)
+  buf.writeUInt32LE(sampleRate, 24);             // SampleRate
+  buf.writeUInt32LE(sampleRate * 2, 28);         // ByteRate
+  buf.writeUInt16LE(2, 32);                      // BlockAlign
+  buf.writeUInt16LE(16, 34);                     // BitsPerSample
+  buf.write("data", 36);                         // Subchunk2ID
+  buf.writeUInt32LE(dataSize, 40);               // Subchunk2Size
+  // PCM data는 0으로 초기화됨 (무음)
+  fs.writeFileSync(wavPath, buf);
+
   return new Promise((resolve, reject) => {
     ffmpeg()
-      .input(`aevalsrc=0:c=mono:r=24000:d=${durationSec}`)
-      .inputOptions(["-f lavfi"])
+      .input(wavPath)
       .outputOptions(["-c:a libmp3lame", "-q:a 2"])
       .output(outputPath)
-      .on("end", () => resolve())
-      .on("error", (err) => reject(err))
+      .on("end", () => { try { fs.unlinkSync(wavPath); } catch {} resolve(); })
+      .on("error", (err) => { try { fs.unlinkSync(wavPath); } catch {} reject(err); })
       .run();
   });
 }

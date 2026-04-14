@@ -28,6 +28,7 @@ services:
       - ./storage/bgm:/app/storage/bgm
       - ./service-account.json:/app/service-account.json:ro
       - /Users/david/Documents/my-video-project/my-video/public:/app/remotion-project/public
+      - /Users/david/Documents/my-video-project/my-video/src:/app/remotion-project/src
       - ./backend/data:/app/data
     env_file:
       - .env

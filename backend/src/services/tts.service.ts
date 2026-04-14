@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { getGcpAccessToken } from "../config/vertexai";
-import { generateSilenceMp3, concatAudioFiles } from "./ffmpeg.service";
+import { generateSilenceMp3, concatAudioFiles, getMediaDuration } from "./ffmpeg.service";
 
 const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const AUDIO_BASE = process.env.AUDIO_STORAGE_PATH || "/app/storage/audio";
@@ -17,7 +17,7 @@ const NARRATION_VOICE = {
 
 const NARRATION_AUDIO_CONFIG = {
   audioEncoding: "MP3",
-  speakingRate: 0.62,   // 0.72→0.62: 더 천천히, 장중한 성경 다큐 나레이션
+  speakingRate: 0.75,   // 0.62→0.75: 조금 빠르게 (자연스러운 다큐 나레이션)
   volumeGainDb: 1.5,
 };
 
@@ -129,18 +129,30 @@ async function callTtsApi(text: string, token: string): Promise<Buffer> {
   return Buffer.from(response.data.audioContent, "base64");
 }
 
+export interface SubtitleTiming {
+  text: string;       // 한국어 자막
+  heText?: string;    // 히브리어 자막 (선택)
+  startSec: number;
+  endSec: number;
+}
+
+export interface NarrationResult {
+  filePath: string;
+  cleanedText: string;
+  timings: SubtitleTiming[];
+}
+
 export async function generateNarration(
   episodeId: string,
   inputText: string
-): Promise<string> {
+): Promise<NarrationResult> {
   const token = await getGcpAccessToken();
 
-  // SRT 형식이면 타임코드/인덱스 파싱 후 cleanNarrationText 적용
   const isSrt = /^\d+\s*\n\d{2}:\d{2}:\d{2}/.test(inputText.trim());
   const base = isSrt ? extractSrtText(inputText) : inputText.trim();
   const extracted = cleanNarrationText(base);
 
-  // 바이트 한도 적용 (한글 3바이트/자, 4800 bytes)
+  // 바이트 한도 (한글 3바이트/자, 4800 bytes)
   let cleanedText = "";
   let byteCount = 0;
   for (const char of extracted) {
@@ -152,9 +164,16 @@ export async function generateNarration(
 
   console.log(`[TTS] 텍스트 정제: ${extracted.length}자 → ${cleanedText.length}자`);
 
-  // ── 쉼표·마침표 기준 분절 → 각각 TTS + 사이에 묵음 삽입 ────────────────
-  // Chirp3-HD는 SSML break 미지원이므로 FFmpeg로 직접 pause 삽입
-  const rawSegments = cleanedText.split(/(?<=[,.\u3002\uff0c])\s*/u).filter((s) => s.trim());
+  if (!cleanedText) {
+    throw new Error("TTS 변환할 텍스트가 없습니다. 에피소드 SCRIPT/SRT_KO 내용을 확인하세요.");
+  }
+
+  // 마침표·물음표·느낌표·쉼표 기준 분절 (자막 한 줄 = 한 절)
+  // 쉼표와 마침표 모두 분리 → 쉼표는 더 긴 묵음(600ms), 마침표는 900ms
+  const rawSegments = cleanedText
+    .split(/(?<=[,!?.，。\u3002\uff0c])\s*/u)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 
   const dir = path.join(AUDIO_BASE, episodeId);
   fs.mkdirSync(dir, { recursive: true });
@@ -162,31 +181,51 @@ export async function generateNarration(
 
   const ts = Date.now();
   const tempFiles: string[] = [];
+  const timings: SubtitleTiming[] = [];
+  let currentTimeSec = 0;
 
   try {
     for (let i = 0; i < rawSegments.length; i++) {
-      const seg = rawSegments[i].trim();
+      const seg = rawSegments[i];
       if (!seg) continue;
 
-      // 분절별 TTS
-      console.log(`[TTS] 분절 ${i + 1}/${rawSegments.length}: "${seg.slice(0, 30)}..."`);
+      console.log(`[TTS] 분절 ${i + 1}/${rawSegments.length}: "${seg.slice(0, 40)}"`);
       const buf = await callTtsApi(seg, token);
       const segPath = path.join(os.tmpdir(), `narr_seg_${ts}_${i}.mp3`);
       fs.writeFileSync(segPath, buf);
       tempFiles.push(segPath);
 
-      // 마지막 분절이 아니면 묵음 삽입
+      // 실제 분절 길이 측정 → 정확한 자막 타이밍
+      const segDuration = getMediaDuration(segPath);
+      const segStart = currentTimeSec;
+      const segEnd = currentTimeSec + segDuration;
+
+      // 자막 표시용 세분화: 최대 20자 단위로 분할, 시간은 글자 수 비례 배분
+      const displayChunks = splitForDisplay(seg, 20);
+      let chunkStart = segStart;
+      for (const chunk of displayChunks) {
+        const chunkDur = (chunk.length / seg.length) * segDuration;
+        timings.push({ text: chunk, startSec: chunkStart, endSec: chunkStart + chunkDur });
+        chunkStart += chunkDur;
+      }
+
+      currentTimeSec = segEnd;
+
+      // 분절 뒤 묵음: 쉼표 600ms / 마침표·문장끝 900ms
       if (i < rawSegments.length - 1) {
-        const endsWithPeriod = /[.\u3002]$/.test(seg);
-        const silDur = endsWithPeriod ? 0.7 : 0.4;   // 마침표 700ms / 쉼표 400ms
+        const endsWithComma = /[,，\uff0c]$/.test(seg);
+        const silDur = endsWithComma ? 0.6 : 0.9;
         const silPath = path.join(os.tmpdir(), `narr_sil_${ts}_${i}.mp3`);
         await generateSilenceMp3(silDur, silPath);
         tempFiles.push(silPath);
-        console.log(`[TTS] 묵음 삽입 ${silDur * 1000}ms (${endsWithPeriod ? "마침표" : "쉼표"})`);
+        currentTimeSec += silDur;
+        console.log(`[TTS] 묵음 ${silDur * 1000}ms (${endsWithComma ? "쉼표" : "문장끝"})`);
       }
     }
 
-    // 모든 분절 + 묵음 연결
+    if (tempFiles.length === 0) {
+      throw new Error("TTS 분절 생성 실패 — 생성된 오디오 파일이 없습니다.");
+    }
     await concatAudioFiles(tempFiles, filePath);
   } finally {
     for (const f of tempFiles) {
@@ -194,6 +233,34 @@ export async function generateNarration(
     }
   }
 
-  console.log(`[TTS] 나레이션 저장 완료: ${filePath} (${audioBuffer.length} bytes)`);
-  return filePath;
+  const savedSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+  console.log(`[TTS] 나레이션 저장 완료: ${filePath} (${savedSize} bytes), 자막 ${timings.length}개`);
+  return { filePath, cleanedText, timings };
+}
+
+/**
+ * 긴 텍스트를 maxChars 이하의 자막 라인으로 분할
+ * - 공백(어절 경계)에서 우선 분리
+ * - 공백이 없으면 maxChars 위치에서 강제 분리
+ */
+function splitForDisplay(text: string, maxChars: number): string[] {
+  if (text.length <= maxChars) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text.trim();
+
+  while (remaining.length > maxChars) {
+    // maxChars 이하에서 가장 마지막 공백 찾기
+    let cutAt = maxChars;
+    const spaceIdx = remaining.lastIndexOf(" ", maxChars);
+    if (spaceIdx > maxChars / 2) {
+      // 공백이 앞쪽 절반 이후에 있으면 그 지점에서 분리
+      cutAt = spaceIdx;
+    }
+    chunks.push(remaining.slice(0, cutAt).trim());
+    remaining = remaining.slice(cutAt).trim();
+  }
+
+  if (remaining.length > 0) chunks.push(remaining);
+  return chunks;
 }

@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
-import { Download, Play, Send, RefreshCw, ExternalLink, Loader2 } from "lucide-react";
+import { Download, Play, Send, RefreshCw, ExternalLink, Loader2, Upload, Film, Mic, AlignLeft, ChevronLeft, Save, Clock } from "lucide-react";
 import { PageWrapper } from "../components/layout/PageWrapper";
 import { projectsApi } from "../api/projects";
-import { remotionApi, RemotionProps, RenderStatus } from "../api/remotion";
+import { remotionApi, RemotionProps, RenderStatus, SubEntry } from "../api/remotion";
 
 const REMOTION_STUDIO_URL =
   (import.meta.env.VITE_REMOTION_URL as string) || "http://localhost:3002";
@@ -22,6 +22,18 @@ export function VideoStudio() {
   const [iframeSrc, setIframeSrc] = useState(REMOTION_STUDIO_URL);
   const [renderStatus, setRenderStatus] = useState<RenderStatus | null>(null);
   const [fromKeyframeNotice, setFromKeyframeNotice] = useState(!!incomingProps?.fromKeyframe);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadError, setUploadError] = useState("");
+  const [narrationStatus, setNarrationStatus] = useState<"idle" | "generating" | "done" | "error">("idle");
+  const [narrationError, setNarrationError] = useState("");
+  const [narrationDuration, setNarrationDuration] = useState<number | null>(null);
+  const [subtitleLoading, setSubtitleLoading] = useState(false);
+  const [activeView, setActiveView] = useState<"studio" | "subtitles">("studio");
+  const [subtitles, setSubtitles] = useState<SubEntry[]>([]);
+  const [subtitleSaveStatus, setSubtitleSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [subtitleSaveError, setSubtitleSaveError] = useState("");
+  const [subtitleLoadError, setSubtitleLoadError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 키프레임 갤러리에서 넘어온 경우 — 자동으로 Remotion 스튜디오로 전송
@@ -34,7 +46,8 @@ export function VideoStudio() {
       audioFileName: incomingProps.audioFileName ?? "narration.mp3",
       episodeId: incomingProps.episodeId,
     }).then(() => {
-      setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`);
+      // data.json 쓰기 완료 후 iframe 새로고침 — calculateMetadata가 최신값을 읽도록 300ms 여유
+      setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 300);
     }).catch(() => {});
     // 5초 후 알림 배너 숨김
     const t = setTimeout(() => setFromKeyframeNotice(false), 5000);
@@ -48,6 +61,99 @@ export function VideoStudio() {
     queryFn: projectsApi.list,
   });
 
+  // public/ 동영상 파일 목록
+  const { data: videoFiles = [], refetch: refetchVideos } = useQuery({
+    queryKey: ["remotionVideos"],
+    queryFn: remotionApi.listVideos,
+  });
+
+  // 나레이션 TTS 생성 핸들러
+  async function handleGenerateNarration() {
+    const epId = selectedEpisodeId;
+    if (!epId) return;
+    setNarrationStatus("generating");
+    setNarrationError("");
+    try {
+      const result = await remotionApi.generateNarration(epId);
+      setAudioFileName(result.fileName);
+      if (result.durationSec) setNarrationDuration(result.durationSec);
+      // 생성된 자막 파싱 → 편집기에 로드
+      if (result.subtitlesJson) {
+        try {
+          const parsed = JSON.parse(result.subtitlesJson) as SubEntry[];
+          setSubtitles(parsed.map((s) => ({ ...s, heText: s.heText ?? "" })));
+        } catch {}
+      }
+      setNarrationStatus("done");
+      // Remotion 미리보기 갱신
+      setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 500);
+    } catch (err: any) {
+      setNarrationError(err?.response?.data?.error ?? err.message);
+      setNarrationStatus("error");
+    }
+  }
+
+  // 자막 불러오기 (저장된 subtitles.json에서)
+  async function handleLoadSubtitles() {
+    setSubtitleLoadError("");
+    try {
+      const loaded = await remotionApi.getSubtitles();
+      if (loaded.length > 0) {
+        // heText 없는 항목은 빈 문자열로 초기화 → 편집 필드 항상 표시
+        setSubtitles(loaded.map((s) => ({ ...s, heText: s.heText ?? "" })));
+      } else {
+        setSubtitleLoadError("자막 파일이 없습니다. 나레이션을 먼저 생성해 주세요.");
+      }
+    } catch (err: any) {
+      setSubtitleLoadError(err?.response?.data?.error ?? "자막 불러오기 실패");
+    }
+  }
+
+  // 자막 저장 → Remotion 즉시 반영
+  async function handleSaveSubtitles() {
+    setSubtitleSaveStatus("saving");
+    setSubtitleSaveError("");
+    try {
+      await remotionApi.updateSubtitles(subtitles);
+      setSubtitleSaveStatus("saved");
+      setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 300);
+      setTimeout(() => setSubtitleSaveStatus("idle"), 3000);
+    } catch (err: any) {
+      setSubtitleSaveError(err?.response?.data?.error ?? err.message);
+      setSubtitleSaveStatus("error");
+    }
+  }
+
+  // 자막 항목 필드 수정
+  function updateSubtitle(index: number, field: "text" | "heText", value: string) {
+    setSubtitles((prev) => prev.map((s, i) => i === index ? { ...s, [field]: value } : s));
+  }
+
+  // 초 → "0:00.0" 형식
+  function formatSec(s: number): string {
+    const m = Math.floor(s / 60);
+    const sec = (s % 60).toFixed(1).padStart(4, "0");
+    return `${m}:${sec}`;
+  }
+
+  // 동영상 업로드 핸들러
+  async function handleVideoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError("");
+    setUploadProgress(0);
+    try {
+      const result = await remotionApi.uploadVideo(file, setUploadProgress);
+      setVideoFileName(result.fileName);
+      refetchVideos();
+    } catch (err: any) {
+      setUploadError(err?.response?.data?.error ?? err.message);
+    } finally {
+      setUploadProgress(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   // 에피소드 목록
   const { data: episodes } = useQuery({
     queryKey: ["projectEpisodes", selectedProjectId],
@@ -55,21 +161,38 @@ export function VideoStudio() {
     enabled: !!selectedProjectId,
   });
 
-  // 에피소드 선택 시 텍스트 자동 채우기
-  function handleSelectEpisode(episodeId: string) {
+  // 에피소드 선택 시 텍스트 자동 채우기 (SCRIPT 나레이션 → SRT → 제목 순)
+  async function handleSelectEpisode(episodeId: string) {
     setSelectedEpisodeId(episodeId);
-    if (!episodes) return;
-    const ep = episodes.find((e) => e.id === episodeId);
-    if (!ep) return;
-    setKoreanText(ep.titleKo || "");
-    setHebrewText(ep.titleHe || "");
+    if (!episodeId) return;
+
+    // 우선 제목으로 즉시 채우기 (로딩 중 fallback)
+    if (episodes) {
+      const ep = episodes.find((e) => e.id === episodeId);
+      if (ep) {
+        setKoreanText(ep.titleKo || "");
+        setHebrewText(ep.titleHe || "");
+      }
+    }
+
+    // SCRIPT/SRT에서 실제 나레이션 텍스트 fetch
+    setSubtitleLoading(true);
+    try {
+      const texts = await remotionApi.getEpisodeSubtitle(episodeId);
+      if (texts.koreanText) setKoreanText(texts.koreanText);
+      if (texts.hebrewText) setHebrewText(texts.hebrewText);
+    } catch {
+      // fetch 실패 시 제목 fallback 유지
+    } finally {
+      setSubtitleLoading(false);
+    }
   }
 
   // 스튜디오로 전송
   const sendMutation = useMutation({
     mutationFn: (props: RemotionProps) => remotionApi.sendProps(props),
     onSuccess: () => {
-      setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`);
+      setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 300);
     },
   });
 
@@ -175,7 +298,10 @@ export function VideoStudio() {
 
           {/* 자막 텍스트 */}
           <section className="bg-parchment/5 border border-gold/15 rounded-xl p-4 space-y-3">
-            <h3 className="font-display text-gold text-sm">자막 텍스트</h3>
+            <h3 className="font-display text-gold text-sm flex items-center gap-2">
+              자막 텍스트
+              {subtitleLoading && <Loader2 size={12} className="animate-spin text-gold/60" />}
+            </h3>
             <div>
               <label className="block text-xs text-parchment/60 mb-1">한국어</label>
               <textarea
@@ -204,25 +330,105 @@ export function VideoStudio() {
             <h3 className="font-display text-gold text-sm">
               파일 설정 <span className="text-parchment/40 font-body text-xs">(public/ 내)</span>
             </h3>
+
+            {/* 배경 동영상 업로드 */}
             <div>
               <label className="block text-xs text-parchment/60 mb-1">
-                배경 영상 <span className="text-parchment/30">(비워두면 그라데이션 배경)</span>
+                배경 동영상 <span className="text-parchment/30">(비워두면 그라데이션)</span>
               </label>
+
+              {/* 업로드 버튼 */}
+              <input ref={fileInputRef} type="file" accept=".mp4,.webm,.mov,.avi,.mkv" className="hidden" onChange={handleVideoUpload} />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadProgress !== null}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-parchment/5 hover:bg-parchment/10 border border-parchment/20 hover:border-gold/30 text-parchment/60 hover:text-parchment text-xs font-body rounded-lg transition-colors disabled:opacity-40"
+              >
+                {uploadProgress !== null ? (
+                  <><Loader2 size={12} className="animate-spin" /> 업로드 중 {uploadProgress}%</>
+                ) : (
+                  <><Upload size={12} /> 동영상 파일 업로드</>
+                )}
+              </button>
+              {uploadError && <p className="text-xs text-red-400 mt-1">{uploadError}</p>}
+
+              {/* 업로드된 파일 선택 드롭다운 */}
+              {videoFiles.length > 0 && (
+                <select
+                  className="w-full mt-2 bg-ink border border-gold/20 rounded-lg px-3 py-2 text-xs text-parchment focus:outline-none focus:border-gold/50"
+                  value={videoFileName}
+                  onChange={(e) => setVideoFileName(e.target.value)}
+                >
+                  <option value="">— 파일 선택 (또는 직접 입력) —</option>
+                  {videoFiles.map((f) => (
+                    <option key={f} value={f}>{f}</option>
+                  ))}
+                </select>
+              )}
+
+              {/* 직접 입력 */}
               <input
-                className="w-full bg-ink border border-gold/20 rounded-lg px-3 py-2 text-sm text-parchment focus:outline-none focus:border-gold/50"
-                placeholder="background_video.mp4"
+                className="w-full mt-2 bg-ink border border-gold/20 rounded-lg px-3 py-2 text-sm text-parchment focus:outline-none focus:border-gold/50"
+                placeholder="파일명 직접 입력 (예: video.mp4)"
                 value={videoFileName}
                 onChange={(e) => setVideoFileName(e.target.value)}
               />
+              {videoFileName && (
+                <p className="text-xs text-gold/60 mt-1 flex items-center gap-1">
+                  <Film size={10} /> {videoFileName}
+                </p>
+              )}
             </div>
+
             <div>
               <label className="block text-xs text-parchment/60 mb-1">나레이션 오디오</label>
               <input
-                className="w-full bg-ink border border-gold/20 rounded-lg px-3 py-2 text-sm text-parchment focus:outline-none focus:border-gold/50"
+                className="w-full bg-ink border border-gold/20 rounded-lg px-3 py-2 text-sm text-parchment focus:outline-none focus:border-gold/50 mb-2"
                 value={audioFileName}
                 onChange={(e) => setAudioFileName(e.target.value)}
               />
+              {/* 나레이션 TTS 생성 버튼 — 에피소드 선택 시 항상 표시 */}
+              <button
+                onClick={handleGenerateNarration}
+                disabled={narrationStatus === "generating" || !selectedEpisodeId}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-gold/10 hover:bg-gold/20 disabled:opacity-40 disabled:cursor-not-allowed text-gold border border-gold/30 rounded-lg text-xs font-body transition-colors"
+                title={!selectedEpisodeId ? "에피소드를 먼저 선택하세요" : ""}
+              >
+                {narrationStatus === "generating" ? (
+                  <><Loader2 size={12} className="animate-spin" /> 나레이션 생성 중…</>
+                ) : (
+                  <><Mic size={12} /> 한국어 나레이션 생성 (TTS){!selectedEpisodeId && " (에피소드 선택 필요)"}</>
+                )}
+              </button>
+              {narrationStatus === "done" && (
+                <p className="text-xs text-emerald-400 mt-1">
+                  ✓ narration.mp3 생성 완료
+                  {narrationDuration && ` (${narrationDuration.toFixed(1)}초 → 비디오 ${(narrationDuration + 1).toFixed(0)}초)`}
+                </p>
+              )}
+              {narrationStatus === "error" && (
+                <p className="text-xs text-red-400 mt-1">⚠ {narrationError}</p>
+              )}
             </div>
+          </section>
+
+          {/* 자막 편집 */}
+          <section className="bg-parchment/5 border border-gold/15 rounded-xl p-4 space-y-2">
+            <h3 className="font-display text-gold text-sm">자막 편집</h3>
+            <p className="text-xs text-parchment/50">나레이션 생성 후 각 자막 라인을 직접 수정할 수 있습니다.</p>
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  setActiveView("subtitles");
+                  await handleLoadSubtitles();
+                }}
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gold/10 hover:bg-gold/20 text-gold border border-gold/30 rounded-lg text-xs font-body transition-colors"
+              >
+                <AlignLeft size={12} />
+                {subtitles.length > 0 ? `자막 편집 열기 (${subtitles.length}개)` : "자막 불러오기 / 편집"}
+              </button>
+            </div>
+            {subtitleLoadError && <p className="text-xs text-red-400">{subtitleLoadError}</p>}
           </section>
 
           {/* 액션 버튼 */}
@@ -279,29 +485,129 @@ export function VideoStudio() {
           </div>
         </div>
 
-        {/* 우측: Remotion Studio iframe */}
-        <div className="flex-1 flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-parchment/40 font-body">
-              Remotion Studio — 실시간 미리보기 (<span className="text-gold/60">{REMOTION_STUDIO_URL}</span>)
-            </p>
-            <button
-              onClick={() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`)}
-              className="flex items-center gap-1 text-xs text-parchment/50 hover:text-parchment transition-colors"
-            >
-              <RefreshCw size={12} />
-              새로고침
-            </button>
-          </div>
-          <div className="flex-1 rounded-xl overflow-hidden border border-gold/15">
-            <iframe
-              key={iframeSrc}
-              src={iframeSrc}
-              className="w-full h-full bg-zinc-900"
-              title="Remotion Studio"
-              allow="autoplay"
-            />
-          </div>
+        {/* 우측: 스튜디오 / 자막 편집 탭 */}
+        <div className="flex-1 flex flex-col gap-2 min-w-0">
+
+          {activeView === "studio" ? (
+            <>
+              <div className="flex items-center justify-between flex-shrink-0">
+                <p className="text-xs text-parchment/40 font-body">
+                  Remotion Studio — 실시간 미리보기 (<span className="text-gold/60">{REMOTION_STUDIO_URL}</span>)
+                </p>
+                <button
+                  onClick={() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`)}
+                  className="flex items-center gap-1 text-xs text-parchment/50 hover:text-parchment transition-colors"
+                >
+                  <RefreshCw size={12} />
+                  새로고침
+                </button>
+              </div>
+              <div className="flex-1 rounded-xl overflow-hidden border border-gold/15">
+                <iframe
+                  key={iframeSrc}
+                  src={iframeSrc}
+                  className="w-full h-full bg-zinc-900"
+                  title="Remotion Studio"
+                  allow="autoplay"
+                />
+              </div>
+            </>
+          ) : (
+            /* ── 자막 편집 뷰 ─────────────────────────────────────────── */
+            <div className="flex-1 flex flex-col gap-3 min-h-0">
+              {/* 헤더 */}
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <button
+                  onClick={() => setActiveView("studio")}
+                  className="flex items-center gap-1 text-xs text-parchment/60 hover:text-parchment transition-colors"
+                >
+                  <ChevronLeft size={14} />
+                  스튜디오로 돌아가기
+                </button>
+                <span className="text-parchment/30 text-xs">|</span>
+                <span className="text-sm font-display text-gold">자막 편집</span>
+                <span className="text-xs text-parchment/40">{subtitles.length}개 항목</span>
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    onClick={handleSaveSubtitles}
+                    disabled={subtitleSaveStatus === "saving"}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gold/20 hover:bg-gold/30 disabled:opacity-40 text-gold border border-gold/30 rounded-lg text-xs font-body transition-colors"
+                  >
+                    {subtitleSaveStatus === "saving" ? (
+                      <><Loader2 size={12} className="animate-spin" /> 저장 중…</>
+                    ) : (
+                      <><Save size={12} /> 저장 및 미리보기 반영</>
+                    )}
+                  </button>
+                  {subtitleSaveStatus === "saved" && (
+                    <span className="text-xs text-emerald-400">✓ 저장됨</span>
+                  )}
+                  {subtitleSaveStatus === "error" && (
+                    <span className="text-xs text-red-400">⚠ {subtitleSaveError}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* 자막 항목 리스트 */}
+              {subtitles.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-3 text-parchment/40 text-sm">
+                  <span>자막 데이터가 없습니다.</span>
+                  <button
+                    onClick={handleLoadSubtitles}
+                    className="flex items-center gap-2 px-4 py-2 bg-gold/10 hover:bg-gold/20 text-gold border border-gold/30 rounded-lg text-xs font-body transition-colors"
+                  >
+                    <AlignLeft size={12} /> 다시 불러오기
+                  </button>
+                  {subtitleLoadError && <p className="text-xs text-red-400">{subtitleLoadError}</p>}
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                  {subtitles.map((sub, i) => (
+                    <div
+                      key={i}
+                      className="bg-parchment/5 border border-gold/15 hover:border-gold/30 rounded-xl p-3 space-y-2 transition-colors"
+                    >
+                      {/* 번호 + 시간 */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono bg-gold/10 text-gold px-2 py-0.5 rounded-md">
+                          #{i + 1}
+                        </span>
+                        <span className="flex items-center gap-1 text-xs text-parchment/40 font-mono">
+                          <Clock size={10} />
+                          {formatSec(sub.startSec)} → {formatSec(sub.endSec)}
+                          <span className="text-parchment/25 ml-1">({(sub.endSec - sub.startSec).toFixed(1)}s)</span>
+                        </span>
+                      </div>
+
+                      {/* 히브리어 */}
+                      <div>
+                        <label className="block text-xs text-parchment/40 mb-1">히브리어</label>
+                        <textarea
+                          rows={2}
+                          dir="rtl"
+                          className="w-full bg-ink border border-gold/20 focus:border-gold/50 rounded-lg px-3 py-1.5 text-sm text-gold/90 resize-none focus:outline-none font-mono leading-relaxed"
+                          value={sub.heText ?? ""}
+                          onChange={(e) => updateSubtitle(i, "heText", e.target.value)}
+                          placeholder="히브리어 입력 (선택)"
+                        />
+                      </div>
+
+                      {/* 한국어 */}
+                      <div>
+                        <label className="block text-xs text-parchment/40 mb-1">한국어</label>
+                        <textarea
+                          rows={2}
+                          className="w-full bg-ink border border-gold/20 focus:border-gold/50 rounded-lg px-3 py-1.5 text-sm text-parchment resize-none focus:outline-none leading-relaxed"
+                          value={sub.text}
+                          onChange={(e) => updateSubtitle(i, "text", e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </PageWrapper>

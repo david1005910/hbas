@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Image, RefreshCw, Check, Zap, RotateCcw, MonitorPlay, Loader2 } from "lucide-react";
+import { Image, RefreshCw, Check, Zap, RotateCcw, MonitorPlay, Loader2, ExternalLink } from "lucide-react";
 import { keyframesApi, streamKeyframeGeneration } from "../../api/keyframes";
 import { remotionApi } from "../../api/remotion";
 import type { SceneKeyframe } from "../../types";
