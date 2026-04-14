@@ -35,6 +35,7 @@ export function VideoStudio() {
   const [subtitleLoadError, setSubtitleLoadError] = useState("");
   const [wordReplacements, setWordReplacements] = useState<WordReplacement[]>([]);
   const [wordReplSaveStatus, setWordReplSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [wordReplSaveError, setWordReplSaveError] = useState("");
   const [showWordRepl, setShowWordRepl] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -155,6 +156,7 @@ export function VideoStudio() {
     } catch {
       // 로드 실패 시 기본값
       setWordReplacements([
+        { from: "여호와 하나님", to: "엘로힘", enabled: true },
         { from: "주 하나님", to: "엘로힘", enabled: true },
         { from: "하나님", to: "엘로힘", enabled: true },
       ]);
@@ -164,11 +166,16 @@ export function VideoStudio() {
   // 단어 치환 규칙 저장
   async function handleSaveWordReplacements() {
     setWordReplSaveStatus("saving");
+    setWordReplSaveError("");
+    // from이 비어 있는 규칙은 저장하지 않음
+    const valid = wordReplacements.filter((r) => r.from.trim() !== "");
     try {
-      await remotionApi.saveWordReplacements(wordReplacements);
+      await remotionApi.saveWordReplacements(valid);
+      setWordReplacements(valid);
       setWordReplSaveStatus("saved");
       setTimeout(() => setWordReplSaveStatus("idle"), 3000);
-    } catch {
+    } catch (e: any) {
+      setWordReplSaveError(e?.message ?? "저장 실패");
       setWordReplSaveStatus("error");
     }
   }
@@ -556,16 +563,25 @@ export function VideoStudio() {
                 <button
                   onClick={handleSaveWordReplacements}
                   disabled={wordReplSaveStatus === "saving"}
-                  className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-gold/10 hover:bg-gold/20 disabled:opacity-40 text-gold border border-gold/30 rounded-lg text-xs font-body transition-colors"
+                  className={`w-full flex items-center justify-center gap-1.5 px-3 py-1.5 disabled:opacity-40 border rounded-lg text-xs font-body transition-colors ${
+                    wordReplSaveStatus === "error"
+                      ? "bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/30"
+                      : "bg-gold/10 hover:bg-gold/20 text-gold border-gold/30"
+                  }`}
                 >
                   {wordReplSaveStatus === "saving" ? (
                     <><Loader2 size={11} className="animate-spin" /> 저장 중…</>
                   ) : wordReplSaveStatus === "saved" ? (
                     <>✓ 저장됨</>
+                  ) : wordReplSaveStatus === "error" ? (
+                    <>⚠ 저장 실패 — 재시도</>
                   ) : (
                     <><Save size={11} /> 치환 규칙 저장</>
                   )}
                 </button>
+                {wordReplSaveStatus === "error" && wordReplSaveError && (
+                  <p className="text-xs text-red-400 break-all">{wordReplSaveError}</p>
+                )}
               </div>
             )}
           </section>

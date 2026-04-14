@@ -217,11 +217,17 @@ router.get("/word-replacements", (_req: Request, res: Response) => {
 router.post("/word-replacements", (req: Request, res: Response) => {
   try {
     const { replacements } = req.body;
-    if (!Array.isArray(replacements)) return res.status(400).json({ error: "replacements 배열 필수" });
-    saveReplacements(replacements as WordReplacement[]);
-    res.json({ success: true, count: replacements.length });
+    if (!Array.isArray(replacements)) {
+      return res.status(400).json({ error: "replacements 배열 필수" });
+    }
+    // from이 비어 있는 규칙 제거
+    const valid = (replacements as WordReplacement[]).filter((r) => r.from?.trim());
+    saveReplacements(valid);
+    console.log(`[WordRepl] ${valid.length}개 규칙 저장 완료`);
+    res.json({ success: true, count: valid.length });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error("[WordRepl] 저장 실패:", err.message);
+    res.status(500).json({ error: `저장 실패: ${err.message}` });
   }
 });
 
