@@ -28,7 +28,11 @@ export function loadReplacements(): WordReplacement[] {
   if (!fs.existsSync(CONFIG_PATH)) return DEFAULT_REPLACEMENTS;
   try {
     const data = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
-    return Array.isArray(data) ? data : DEFAULT_REPLACEMENTS;
+    if (!Array.isArray(data)) return DEFAULT_REPLACEMENTS;
+    // Merge: add any default rules missing from saved config (by `from` key)
+    const savedFroms = new Set(data.map((r: WordReplacement) => r.from));
+    const missing = DEFAULT_REPLACEMENTS.filter((r) => !savedFroms.has(r.from));
+    return [...missing, ...data];
   } catch {
     return DEFAULT_REPLACEMENTS;
   }

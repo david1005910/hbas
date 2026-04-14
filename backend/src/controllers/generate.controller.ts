@@ -50,7 +50,7 @@ export async function generateScript(req: Request, res: Response, next: NextFunc
       data: {
         episodeId: episode.id,
         contentType: "SCRIPT",
-        content: fullContent,
+        content: applyWordReplacements(fullContent),
         aiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
       },
     });
@@ -88,7 +88,7 @@ export async function generateAnimPrompt(req: Request, res: Response, next: Next
       data: {
         episodeId: episode.id,
         contentType: "ANIM_PROMPT",
-        content: fullContent,
+        content: applyWordReplacements(fullContent),
         aiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
       },
     });
