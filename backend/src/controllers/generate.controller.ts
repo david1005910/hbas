@@ -5,6 +5,7 @@ import { generateYtMetaPack } from "../services/ytMeta.service";
 import { generateNarration } from "../services/tts.service";
 import { buildScriptPrompt, buildAnimPromptRequest } from "../utils/promptBuilder";
 import { prisma } from "../config/database";
+import { applyWordReplacements } from "../services/wordReplacement.service";
 
 function sseHeaders(res: Response) {
   res.setHeader("Content-Type", "text/event-stream");
@@ -192,6 +193,9 @@ export async function generateNarrationAudio(req: Request, res: Response, next: 
       console.log(`[Narration] SCRIPT fallback 사용 (SRT_KO 없음), TTS 변환 시작`);
     }
 
+    // 단어 치환 적용 (예: 하나님 → 엘로힘) — generateNarration 내부에서도 적용되지만
+    // 여기서 먼저 적용해 자막 text 필드에도 치환된 텍스트가 들어가도록 보장
+    narrationText = applyWordReplacements(narrationText);
     const { filePath } = await generateNarration(episode.id, narrationText);
     const narrationUrl = filePath.replace("/app", "");
 

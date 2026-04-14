@@ -764,6 +764,12 @@ export async function generateNarrationForRemotionPublic(
     console.log(`[Remotion-TTS] 히브리어 자동 배분 (${splitHebrewByLength(episodeHebrew).length}개 라인)`);
   }
 
+  // 자막 한국어 텍스트에 단어 치환 최종 적용 (경로에 무관하게 보장)
+  finalTimings = finalTimings.map((t) => ({
+    ...t,
+    text: applyWordReplacements(t.text),
+  }));
+
   // subtitlesJson: 자막 타이밍 JSON → Remotion props에 전달
   const subtitlesJson = JSON.stringify(finalTimings);
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Image, RefreshCw, Check, Zap, RotateCcw, MonitorPlay, Loader2, ExternalLink } from "lucide-react";
+import { Image, RefreshCw, Check, Zap, RotateCcw, MonitorPlay, Loader2, ExternalLink, Download } from "lucide-react";
 import { keyframesApi, streamKeyframeGeneration } from "../../api/keyframes";
 import { remotionApi } from "../../api/remotion";
 import type { SceneKeyframe } from "../../types";
@@ -106,6 +106,23 @@ export function KeyframeGallery({ episodeId, initialKeyframes, onUpdate }: Props
     }
   }
 
+  async function handleDownload(keyframe: SceneKeyframe) {
+    if (!keyframe.imageUrl) return;
+    try {
+      const res = await fetch(keyframe.imageUrl);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `scene_${keyframe.sceneNumber}.jpg`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // 직접 링크 fallback
+      window.open(keyframe.imageUrl, "_blank");
+    }
+  }
+
   const grouped: Record<number, SceneKeyframe[]> = {};
   keyframes.forEach((k) => {
     if (!grouped[k.sceneNumber]) grouped[k.sceneNumber] = [];
@@ -168,7 +185,7 @@ export function KeyframeGallery({ episodeId, initialKeyframes, onUpdate }: Props
           const justSent = studioSent === latest?.id;
 
           return (
-            <div key={scene} className="border border-gold/20 rounded-xl overflow-hidden bg-ink-light">
+            <div key={scene} className="group border border-gold/20 rounded-xl overflow-hidden bg-ink-light">
               {/* 이미지 영역 */}
               <div className="relative aspect-video bg-ink">
                 {latest?.imageUrl ? (
@@ -194,6 +211,17 @@ export function KeyframeGallery({ episodeId, initialKeyframes, onUpdate }: Props
                   <div className="absolute inset-0 flex items-center justify-center text-parchment/20">
                     <Image size={32} />
                   </div>
+                )}
+
+                {/* 다운로드 버튼 (이미지 있을 때) */}
+                {latest?.imageUrl && !isGenerating && (
+                  <button
+                    onClick={() => handleDownload(latest)}
+                    title="이미지 다운로드"
+                    className="absolute top-2 left-2 p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                  >
+                    <Download size={13} />
+                  </button>
                 )}
 
                 {/* 선택됨 뱃지 */}
@@ -234,6 +262,17 @@ export function KeyframeGallery({ episodeId, initialKeyframes, onUpdate }: Props
                 <div className="flex items-center justify-between">
                   <span className="text-parchment/70 text-sm font-body">씬 {scene}</span>
                   <div className="flex gap-1.5">
+                    {/* 다운로드 버튼 */}
+                    {latest?.imageUrl && (
+                      <button
+                        onClick={() => handleDownload(latest)}
+                        title="이미지 다운로드"
+                        className="flex items-center gap-1 text-xs px-2 py-1 bg-parchment/5 hover:bg-parchment/10 text-parchment/50 hover:text-parchment border border-parchment/10 rounded transition-colors"
+                      >
+                        <Download size={10} />
+                        다운로드
+                      </button>
+                    )}
                     {/* 재생성 버튼 */}
                     {latest && (
                       <button
