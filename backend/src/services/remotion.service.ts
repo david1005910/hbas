@@ -452,7 +452,7 @@ function extractAllHebrewNarration(script: string): string {
     .join(" ");
 }
 
-// 히브리어 라인당 목표 기본 문자 수 (니쿠드 제거 기준, 한 화면에 40자 이내)
+// 히브리어 라인당 최대 글자 수 (자음+공백 포함, 한 화면 한 줄 기준)
 const HE_CHARS_PER_LINE = 40;
 
 /** 히브리어 니쿠드·칸틸레이션 기호 제거 → 기본 문자만 */
@@ -460,22 +460,27 @@ function stripNiqqud(text: string): string {
   return text.replace(/[\u0591-\u05C7]/g, "");
 }
 
-/** 히브리어 텍스트를 단어 경계 기준으로 HE_CHARS_PER_LINE 기본 문자씩 분할 */
+/** 히브리어 텍스트를 단어 경계 기준으로 HE_CHARS_PER_LINE 이내로 분할
+ *  자음 수 + 공백 수를 합산하여 실제 렌더 길이 기준으로 제한 */
 function splitHebrewByLength(text: string): string[] {
   const words = text.split(/\s+/).filter(Boolean);
   const segments: string[] = [];
   let current = "";
-  let baseCount = 0;
+  let lineLen = 0; // 자음 + 공백 합계
 
   for (const word of words) {
-    const wordBase = stripNiqqud(word).length;
-    if (baseCount + wordBase > HE_CHARS_PER_LINE && current) {
+    const wordLen = stripNiqqud(word).length;
+    // 현재 세그먼트에 추가할 길이: 단어 + (앞 공백 1칸, 첫 단어 제외)
+    const addLen = current ? wordLen + 1 : wordLen;
+
+    if (lineLen + addLen > HE_CHARS_PER_LINE && current) {
+      // 현재 세그먼트 확정 → 새 세그먼트 시작
       segments.push(current.trim());
       current = word;
-      baseCount = wordBase;
+      lineLen = wordLen;
     } else {
       current = current ? `${current} ${word}` : word;
-      baseCount += wordBase;
+      lineLen += addLen;
     }
   }
   if (current.trim()) segments.push(current.trim());
