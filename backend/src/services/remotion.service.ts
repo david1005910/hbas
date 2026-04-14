@@ -487,19 +487,29 @@ function splitHebrewByLength(text: string): string[] {
   return segments;
 }
 
-/** 한국어 텍스트를 N등분 (단어 경계 기준) */
+// 한국어 자막 한 줄 최대 글자 수
+const KO_CHARS_PER_LINE = 30;
+
+/** 한국어 텍스트를 N등분 (단어 경계 기준), 각 세그먼트 KO_CHARS_PER_LINE 이내로 제한 */
 function splitKoreanIntoN(text: string, n: number): string[] {
-  if (n <= 1) return [text];
+  if (n <= 1) return [trimKo(text)];
   const words = text.split(/\s+/).filter(Boolean);
   const size = Math.ceil(words.length / n);
   const parts: string[] = [];
   for (let i = 0; i < n; i++) {
     const chunk = words.slice(i * size, (i + 1) * size).join(" ");
-    if (chunk) parts.push(chunk);
+    if (chunk) parts.push(trimKo(chunk));
   }
   // 부족하면 빈 문자열로 채워 N개 맞춤
   while (parts.length < n) parts.push(parts[parts.length - 1] ?? "");
   return parts;
+}
+
+/** 한국어 세그먼트를 KO_CHARS_PER_LINE 이내로 단어 경계에서 잘라냄 */
+function trimKo(text: string): string {
+  if (text.length <= KO_CHARS_PER_LINE) return text;
+  const spaceIdx = text.lastIndexOf(" ", KO_CHARS_PER_LINE);
+  return (spaceIdx > KO_CHARS_PER_LINE / 2 ? text.slice(0, spaceIdx) : text.slice(0, KO_CHARS_PER_LINE)).trim();
 }
 
 /**

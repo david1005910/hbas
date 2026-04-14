@@ -200,8 +200,8 @@ export async function generateNarration(
       const segStart = currentTimeSec;
       const segEnd = currentTimeSec + segDuration;
 
-      // 자막 표시용 세분화: 최대 20자 단위로 분할, 시간은 글자 수 비례 배분
-      const displayChunks = splitForDisplay(seg, 20);
+      // 자막 표시용 세분화: 최대 30자 단위로 분할, 시간은 글자 수 비례 배분
+      const displayChunks = splitForDisplay(seg, 30);
       let chunkStart = segStart;
       for (const chunk of displayChunks) {
         const chunkDur = (chunk.length / seg.length) * segDuration;
