@@ -454,7 +454,7 @@ function extractAllHebrewNarration(script: string): string {
 }
 
 // 히브리어 라인당 최대 글자 수 (자음+공백 포함, 한 화면 한 줄 기준)
-const HE_CHARS_PER_LINE = 40;
+const HE_CHARS_PER_LINE = 30;
 
 /** 히브리어 니쿠드·칸틸레이션 기호 제거 → 기본 문자만 */
 function stripNiqqud(text: string): string {
