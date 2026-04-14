@@ -5,12 +5,14 @@ import fs from "fs";
 import {
   writeProps,
   readProps,
+  readDurationInFrames,
   renderVideo,
   getRenderStatus,
   getDownloadUrl,
   sendKeyframeToStudio,
   generateNarrationForRemotionPublic,
   getEpisodeSubtitle,
+  distributeHebrewForEpisode,
   PROJECT_PATH,
 } from "../services/remotion.service";
 
@@ -152,13 +154,27 @@ router.post("/subtitles", (req: Request, res: Response) => {
     const filePath = path.join(PROJECT_PATH, "public", "subtitles.json");
     fs.writeFileSync(filePath, subtitlesJson, "utf-8");
 
-    // 현재 props에 subtitlesJson 병합 → Root.tsx 업데이트
+    // 현재 props에 subtitlesJson 병합 → Root.tsx 업데이트 (기존 duration 유지)
     const current = readProps();
+    const currentDuration = readDurationInFrames();
     writeProps(
       { ...(current ?? { koreanText: "", hebrewText: "" }), subtitlesJson },
+      currentDuration
     );
 
     res.json({ success: true, count: subtitles.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/v1/remotion/subtitles/auto-hebrew — 기존 자막에 히브리어 자동 배분
+router.post("/subtitles/auto-hebrew", async (req: Request, res: Response) => {
+  try {
+    const { episodeId } = req.body;
+    if (!episodeId) return res.status(400).json({ error: "episodeId 필수" });
+    const subtitles = await distributeHebrewForEpisode(episodeId);
+    res.json({ subtitles });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

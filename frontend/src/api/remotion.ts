@@ -61,6 +61,10 @@ export const remotionApi = {
   updateSubtitles: (subtitles: SubEntry[]) =>
     api.post<{ success: boolean; count: number }>("/remotion/subtitles", { subtitles }).then((r) => r.data),
 
+  // 기존 자막에 히브리어 자동 배분
+  autoFillHebrew: (episodeId: string) =>
+    api.post<{ subtitles: SubEntry[] }>("/remotion/subtitles/auto-hebrew", { episodeId }).then((r) => r.data.subtitles),
+
   // 배경 동영상 업로드
   uploadVideo: (file: File, onProgress?: (pct: number) => void) => {
     const form = new FormData();

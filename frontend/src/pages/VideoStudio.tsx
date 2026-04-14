@@ -97,27 +97,42 @@ export function VideoStudio() {
   async function handleLoadSubtitles() {
     setSubtitleLoadError("");
     try {
-      const loaded = await remotionApi.getSubtitles();
-      if (loaded.length > 0) {
-        // heText 없는 항목은 빈 문자열로 초기화 → 편집 필드 항상 표시
-        setSubtitles(loaded.map((s) => ({ ...s, heText: s.heText ?? "" })));
-      } else {
+      let loaded = await remotionApi.getSubtitles();
+      if (loaded.length === 0) {
         setSubtitleLoadError("자막 파일이 없습니다. 나레이션을 먼저 생성해 주세요.");
+        return;
       }
+
+      // heText 없는 항목이 있고 에피소드가 선택된 경우 → 자동 배분
+      const hasNoHeText = loaded.every((s) => !s.heText);
+      if (hasNoHeText && selectedEpisodeId) {
+        try {
+          const filled = await remotionApi.autoFillHebrew(selectedEpisodeId);
+          if (filled.length > 0) loaded = filled;
+        } catch {
+          // 배분 실패해도 한국어만으로 편집 가능
+        }
+      }
+
+      setSubtitles(loaded.map((s) => ({ ...s, heText: s.heText ?? "" })));
     } catch (err: any) {
       setSubtitleLoadError(err?.response?.data?.error ?? "자막 불러오기 실패");
     }
   }
 
-  // 자막 저장 → Remotion 즉시 반영
+  // 자막 저장 → Remotion 즉시 반영 후 스튜디오 뷰로 전환
   async function handleSaveSubtitles() {
     setSubtitleSaveStatus("saving");
     setSubtitleSaveError("");
     try {
       await remotionApi.updateSubtitles(subtitles);
       setSubtitleSaveStatus("saved");
-      setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 300);
-      setTimeout(() => setSubtitleSaveStatus("idle"), 3000);
+      // Root.tsx 업데이트 후 Remotion 핫리로드 대기 → 스튜디오 전환
+      setTimeout(() => {
+        setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`);
+        setActiveView("studio");
+      }, 600);
+      setTimeout(() => setSubtitleSaveStatus("idle"), 4000);
     } catch (err: any) {
       setSubtitleSaveError(err?.response?.data?.error ?? err.message);
       setSubtitleSaveStatus("error");
@@ -588,7 +603,7 @@ export function VideoStudio() {
                           className="w-full bg-ink border border-gold/20 focus:border-gold/50 rounded-lg px-3 py-1.5 text-sm text-gold/90 resize-none focus:outline-none font-mono leading-relaxed"
                           value={sub.heText ?? ""}
                           onChange={(e) => updateSubtitle(i, "heText", e.target.value)}
-                          placeholder="히브리어 입력 (선택)"
+                          placeholder="히브리어 입력"
                         />
                       </div>
 

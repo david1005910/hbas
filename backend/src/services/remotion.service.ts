@@ -87,6 +87,19 @@ export function readProps(): RemotionProps | null {
   }
 }
 
+/** Root.tsx에서 현재 durationInFrames 값을 읽기 (저장 시 유지용) */
+export function readDurationInFrames(): number {
+  const rootPath = path.join(PROJECT_PATH, "src", "Root.tsx");
+  if (!fs.existsSync(rootPath)) return 150;
+  try {
+    const content = fs.readFileSync(rootPath, "utf-8");
+    const match = content.match(/durationInFrames=\{(\d+)\}/);
+    return match ? parseInt(match[1], 10) : 150;
+  } catch {
+    return 150;
+  }
+}
+
 // ─── 렌더 서버 호출 헬퍼 ─────────────────────────────────────────────────────
 
 function httpRequest(
@@ -558,6 +571,77 @@ export function extractAllKoreanNarration(script: string): string {
     .join(" ");
 }
 
+// ─── 히브리어 텍스트를 타이밍 배열에 배분 ──────────────────────────────────────
+
+function distributeHebrewToTimings(
+  timings: SubtitleTiming[],
+  hebrewText: string,
+  totalDurationSec: number
+): SubtitleTiming[] {
+  if (!hebrewText || timings.length === 0) return timings;
+  const heSegments = splitHebrewByLength(hebrewText);
+  const N = heSegments.length;
+  if (N === 0) return timings;
+  const segDur = totalDurationSec / N;
+  return timings.map((t) => {
+    const segIdx = Math.min(Math.floor(t.startSec / segDur), N - 1);
+    return { ...t, heText: heSegments[segIdx] };
+  });
+}
+
+/** 에피소드의 히브리어 텍스트를 우선순위대로 추출 */
+async function fetchEpisodeHebrew(
+  episode: { contents: { contentType: string; content: string }[]; bibleBookId: number; verseRange: string | null; titleHe: string | null }
+): Promise<string> {
+  const srtHe = episode.contents.find((c) => c.contentType === "SRT_HE");
+  if (srtHe?.content) return srtSingleText(srtHe.content);
+
+  const scriptContent = episode.contents.find((c) => c.contentType === "SCRIPT");
+  if (scriptContent?.content) {
+    const fromScript = extractAllHebrewNarration(scriptContent.content);
+    if (fromScript) return fromScript;
+  }
+
+  if (episode.verseRange) {
+    const fromVerse = await fetchHebrewFromVerseRange(episode.bibleBookId, episode.verseRange);
+    if (fromVerse) return fromVerse;
+  }
+
+  return episode.titleHe ?? "";
+}
+
+// ─── 기존 자막에 히브리어 자동 배분 ──────────────────────────────────────────
+
+export async function distributeHebrewForEpisode(episodeId: string): Promise<SubtitleTiming[]> {
+  const episode = await prisma.episode.findUnique({
+    where: { id: episodeId },
+    include: { contents: { orderBy: { createdAt: "desc" } } },
+  });
+  if (!episode) throw new Error("Episode not found");
+
+  const subtitlesPath = path.join(PROJECT_PATH, "public", "subtitles.json");
+  if (!fs.existsSync(subtitlesPath)) throw new Error("subtitles.json 파일이 없습니다. 나레이션을 먼저 생성하세요.");
+
+  const existing: SubtitleTiming[] = JSON.parse(fs.readFileSync(subtitlesPath, "utf-8"));
+  if (!Array.isArray(existing) || existing.length === 0) throw new Error("자막 항목이 없습니다.");
+
+  const episodeHebrew = await fetchEpisodeHebrew(episode as any);
+  if (!episodeHebrew) throw new Error("히브리어 텍스트를 찾을 수 없습니다. SRT_HE 또는 SCRIPT HE를 먼저 생성하세요.");
+
+  const totalDuration = existing[existing.length - 1].endSec;
+  const updated = distributeHebrewToTimings(existing, episodeHebrew, totalDuration);
+  const subtitlesJson = JSON.stringify(updated);
+
+  fs.writeFileSync(subtitlesPath, subtitlesJson, "utf-8");
+
+  const currentProps = readProps();
+  const currentDuration = readDurationInFrames();
+  writeProps({ ...(currentProps ?? { koreanText: "", hebrewText: episodeHebrew }), subtitlesJson }, currentDuration);
+
+  console.log(`[Subtitle] 히브리어 배분 완료: ${updated.filter((s) => s.heText).length}개 항목`);
+  return updated;
+}
+
 // ─── 에피소드 한국어 나레이션 생성 → Remotion public/ 에 저장 ─────────────────
 
 export async function generateNarrationForRemotionPublic(
@@ -628,8 +712,10 @@ export async function generateNarrationForRemotionPublic(
   const narrationDuration = getMediaDuration(destPath);
   const durationInFrames = Math.ceil((narrationDuration + 1) * FPS);
 
+  // 히브리어 텍스트 미리 조회
+  const episodeHebrew = await fetchEpisodeHebrew(episode as any);
+
   // 구절 기반 자막 페어 우선 시도 (히브리어+한국어 번역 일치)
-  // 구절 데이터 없으면 narration 분절 타이밍으로 fallback
   let finalTimings: typeof timings = timings;
   if (episode.verseRange) {
     const versePairs = await buildVerseSubtitlePairs(
@@ -641,6 +727,12 @@ export async function generateNarrationForRemotionPublic(
       finalTimings = versePairs as typeof timings;
       console.log(`[Remotion-TTS] 구절 기반 자막 ${versePairs.length}개 사용`);
     }
+  }
+
+  // 구절 기반 실패 → 나레이션 타이밍에 히브리어 배분
+  if (finalTimings === timings && episodeHebrew) {
+    finalTimings = distributeHebrewToTimings(timings, episodeHebrew, narrationDuration);
+    console.log(`[Remotion-TTS] 히브리어 자동 배분 (${splitHebrewByLength(episodeHebrew).length}개 라인)`);
   }
 
   // subtitlesJson: 자막 타이밍 JSON → Remotion props에 전달
