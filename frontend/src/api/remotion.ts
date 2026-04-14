@@ -1,5 +1,11 @@
 import { api } from "./client";
 
+export interface WordReplacement {
+  from: string;
+  to: string;
+  enabled: boolean;
+}
+
 export interface SubEntry {
   text: string;      // 한국어 자막
   heText?: string;   // 히브리어 자막
@@ -64,6 +70,14 @@ export const remotionApi = {
   // 기존 자막에 히브리어 자동 배분
   autoFillHebrew: (episodeId: string) =>
     api.post<{ subtitles: SubEntry[] }>("/remotion/subtitles/auto-hebrew", { episodeId }).then((r) => r.data.subtitles),
+
+  // 단어 치환 규칙 조회
+  getWordReplacements: () =>
+    api.get<{ replacements: WordReplacement[] }>("/remotion/word-replacements").then((r) => r.data.replacements),
+
+  // 단어 치환 규칙 저장
+  saveWordReplacements: (replacements: WordReplacement[]) =>
+    api.post<{ success: boolean; count: number }>("/remotion/word-replacements", { replacements }).then((r) => r.data),
 
   // 배경 동영상 업로드
   uploadVideo: (file: File, onProgress?: (pct: number) => void) => {

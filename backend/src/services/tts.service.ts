@@ -4,6 +4,7 @@ import * as path from "path";
 import * as os from "os";
 import { getGcpAccessToken } from "../config/vertexai";
 import { generateSilenceMp3, concatAudioFiles, getMediaDuration } from "./ffmpeg.service";
+import { applyWordReplacements } from "./wordReplacement.service";
 
 const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const AUDIO_BASE = process.env.AUDIO_STORAGE_PATH || "/app/storage/audio";
@@ -150,7 +151,8 @@ export async function generateNarration(
 
   const isSrt = /^\d+\s*\n\d{2}:\d{2}:\d{2}/.test(inputText.trim());
   const base = isSrt ? extractSrtText(inputText) : inputText.trim();
-  const extracted = cleanNarrationText(base);
+  // 단어 치환 적용 (예: 하나님 → 엘로힘) 후 텍스트 정제
+  const extracted = cleanNarrationText(applyWordReplacements(base));
 
   // 바이트 한도 (한글 3바이트/자, 4800 bytes)
   let cleanedText = "";

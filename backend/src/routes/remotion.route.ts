@@ -16,6 +16,11 @@ import {
   distributeHebrewForEpisode,
   PROJECT_PATH,
 } from "../services/remotion.service";
+import {
+  loadReplacements,
+  saveReplacements,
+  WordReplacement,
+} from "../services/wordReplacement.service";
 
 // multer: Remotion public/ 에 직접 저장
 const videoUpload = multer({
@@ -194,6 +199,27 @@ router.post("/send-keyframe", async (req: Request, res: Response) => {
     if (!keyframeId) return res.status(400).json({ error: "keyframeId 필수" });
     const props = await sendKeyframeToStudio(keyframeId);
     res.json({ success: true, props });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/v1/remotion/word-replacements — 단어 치환 규칙 목록
+router.get("/word-replacements", (_req: Request, res: Response) => {
+  try {
+    res.json({ replacements: loadReplacements() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/v1/remotion/word-replacements — 단어 치환 규칙 저장
+router.post("/word-replacements", (req: Request, res: Response) => {
+  try {
+    const { replacements } = req.body;
+    if (!Array.isArray(replacements)) return res.status(400).json({ error: "replacements 배열 필수" });
+    saveReplacements(replacements as WordReplacement[]);
+    res.json({ success: true, count: replacements.length });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

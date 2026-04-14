@@ -4,6 +4,7 @@ import http from "http";
 import { prisma } from "../config/database";
 import { generateNarration } from "./tts.service";
 import { getMediaDuration } from "./ffmpeg.service";
+import { applyWordReplacements } from "./wordReplacement.service";
 
 export const PROJECT_PATH =
   process.env.REMOTION_PROJECT_PATH || "/app/remotion-project";
@@ -548,7 +549,8 @@ async function buildVerseSubtitlePairs(
 
     const cleanHe = (t: string) => t.replace(/\u202B/g, "").trim();
     const allHe = verses.map((v) => cleanHe(v.hebrewText)).join(" ");
-    const allKo = verses.map((v) => v.koreanText).join(" ");
+    // 단어 치환 적용 (예: 하나님 → 엘로힘)
+    const allKo = applyWordReplacements(verses.map((v) => v.koreanText).join(" "));
 
     // 히브리어를 ~45 기본 문자 단위로 분할
     const heSegments = splitHebrewByLength(allHe);

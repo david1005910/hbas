@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
-import { Download, Play, Send, RefreshCw, ExternalLink, Loader2, Upload, Film, Mic, AlignLeft, ChevronLeft, Save, Clock } from "lucide-react";
+import { Download, Play, Send, RefreshCw, ExternalLink, Loader2, Upload, Film, Mic, AlignLeft, ChevronLeft, Save, Clock, Replace, Plus, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
 import { PageWrapper } from "../components/layout/PageWrapper";
 import { projectsApi } from "../api/projects";
-import { remotionApi, RemotionProps, RenderStatus, SubEntry } from "../api/remotion";
+import { remotionApi, RemotionProps, RenderStatus, SubEntry, WordReplacement } from "../api/remotion";
 
 const REMOTION_STUDIO_URL =
   (import.meta.env.VITE_REMOTION_URL as string) || "http://localhost:3002";
@@ -33,6 +33,9 @@ export function VideoStudio() {
   const [subtitleSaveStatus, setSubtitleSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [subtitleSaveError, setSubtitleSaveError] = useState("");
   const [subtitleLoadError, setSubtitleLoadError] = useState("");
+  const [wordReplacements, setWordReplacements] = useState<WordReplacement[]>([]);
+  const [wordReplSaveStatus, setWordReplSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [showWordRepl, setShowWordRepl] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -142,6 +145,32 @@ export function VideoStudio() {
   // 자막 항목 필드 수정
   function updateSubtitle(index: number, field: "text" | "heText", value: string) {
     setSubtitles((prev) => prev.map((s, i) => i === index ? { ...s, [field]: value } : s));
+  }
+
+  // 단어 치환 규칙 로드
+  async function handleLoadWordReplacements() {
+    try {
+      const list = await remotionApi.getWordReplacements();
+      setWordReplacements(list);
+    } catch {
+      // 로드 실패 시 기본값
+      setWordReplacements([
+        { from: "주 하나님", to: "엘로힘", enabled: true },
+        { from: "하나님", to: "엘로힘", enabled: true },
+      ]);
+    }
+  }
+
+  // 단어 치환 규칙 저장
+  async function handleSaveWordReplacements() {
+    setWordReplSaveStatus("saving");
+    try {
+      await remotionApi.saveWordReplacements(wordReplacements);
+      setWordReplSaveStatus("saved");
+      setTimeout(() => setWordReplSaveStatus("idle"), 3000);
+    } catch {
+      setWordReplSaveStatus("error");
+    }
   }
 
   // 초 → "0:00.0" 형식
@@ -447,6 +476,90 @@ export function VideoStudio() {
               </button>
             </div>
             {subtitleLoadError && <p className="text-xs text-red-400">{subtitleLoadError}</p>}
+          </section>
+
+          {/* 단어 치환 */}
+          <section className="bg-parchment/5 border border-gold/15 rounded-xl p-4 space-y-2">
+            <button
+              className="w-full flex items-center justify-between text-sm font-display text-gold"
+              onClick={() => {
+                setShowWordRepl((v) => !v);
+                if (wordReplacements.length === 0) handleLoadWordReplacements();
+              }}
+            >
+              <span className="flex items-center gap-2"><Replace size={14} /> 단어 치환 규칙</span>
+              <span className="text-xs text-parchment/40">{showWordRepl ? "▲" : "▼"}</span>
+            </button>
+
+            {showWordRepl && (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs text-parchment/50">나레이션 TTS 및 자막에 자동 적용됩니다.</p>
+
+                {wordReplacements.map((rule, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    {/* 활성/비활성 토글 */}
+                    <button
+                      onClick={() => setWordReplacements((prev) =>
+                        prev.map((r, idx) => idx === i ? { ...r, enabled: !r.enabled } : r)
+                      )}
+                      className={rule.enabled ? "text-gold" : "text-parchment/30"}
+                      title={rule.enabled ? "비활성화" : "활성화"}
+                    >
+                      {rule.enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                    </button>
+                    {/* from */}
+                    <input
+                      className="flex-1 bg-ink border border-gold/20 rounded px-2 py-1 text-xs text-parchment focus:outline-none focus:border-gold/50"
+                      value={rule.from}
+                      placeholder="원본 단어"
+                      onChange={(e) => setWordReplacements((prev) =>
+                        prev.map((r, idx) => idx === i ? { ...r, from: e.target.value } : r)
+                      )}
+                    />
+                    <span className="text-parchment/30 text-xs">→</span>
+                    {/* to */}
+                    <input
+                      className="flex-1 bg-ink border border-gold/20 rounded px-2 py-1 text-xs text-parchment focus:outline-none focus:border-gold/50"
+                      value={rule.to}
+                      placeholder="치환 단어"
+                      onChange={(e) => setWordReplacements((prev) =>
+                        prev.map((r, idx) => idx === i ? { ...r, to: e.target.value } : r)
+                      )}
+                    />
+                    {/* 삭제 */}
+                    <button
+                      onClick={() => setWordReplacements((prev) => prev.filter((_, idx) => idx !== i))}
+                      className="text-parchment/30 hover:text-red-400 transition-colors"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+
+                {/* 규칙 추가 */}
+                <button
+                  onClick={() => setWordReplacements((prev) => [...prev, { from: "", to: "", enabled: true }])}
+                  className="flex items-center gap-1 text-xs text-parchment/50 hover:text-gold transition-colors"
+                >
+                  <Plus size={12} /> 규칙 추가
+                </button>
+
+                {/* 저장 버튼 */}
+                <button
+                  onClick={handleSaveWordReplacements}
+                  disabled={wordReplSaveStatus === "saving"}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-gold/10 hover:bg-gold/20 disabled:opacity-40 text-gold border border-gold/30 rounded-lg text-xs font-body transition-colors"
+                >
+                  {wordReplSaveStatus === "saving" ? (
+                    <><Loader2 size={11} className="animate-spin" /> 저장 중…</>
+                  ) : wordReplSaveStatus === "saved" ? (
+                    <>✓ 저장됨</>
+                  ) : (
+                    <><Save size={11} /> 치환 규칙 저장</>
+                  )}
+                </button>
+              </div>
+            )}
           </section>
 
           {/* 액션 버튼 */}
