@@ -87,6 +87,17 @@ export function readProps(): RemotionProps | null {
   }
 }
 
+/** 현재 public/subtitles.json 내용 읽기 (props 업데이트 시 유지용) */
+export function readCurrentSubtitlesJson(): string {
+  const filePath = path.join(PROJECT_PATH, "public", "subtitles.json");
+  if (!fs.existsSync(filePath)) return "";
+  try {
+    return fs.readFileSync(filePath, "utf-8");
+  } catch {
+    return "";
+  }
+}
+
 /** Root.tsx에서 현재 durationInFrames 값을 읽기 (저장 시 유지용) */
 export function readDurationInFrames(): number {
   const rootPath = path.join(PROJECT_PATH, "src", "Root.tsx");

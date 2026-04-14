@@ -435,7 +435,10 @@ export function VideoStudio() {
               <button
                 onClick={async () => {
                   setActiveView("subtitles");
-                  await handleLoadSubtitles();
+                  // 이미 로드된 자막이 있으면 다시 불러오지 않음 (편집 내용 보존)
+                  if (subtitles.length === 0) {
+                    await handleLoadSubtitles();
+                  }
                 }}
                 className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gold/10 hover:bg-gold/20 text-gold border border-gold/30 rounded-lg text-xs font-body transition-colors"
               >
@@ -543,6 +546,14 @@ export function VideoStudio() {
                 <span className="text-sm font-display text-gold">자막 편집</span>
                 <span className="text-xs text-parchment/40">{subtitles.length}개 항목</span>
                 <div className="ml-auto flex items-center gap-2">
+                  <button
+                    onClick={handleLoadSubtitles}
+                    title="서버에서 다시 불러오기"
+                    className="flex items-center gap-1 text-xs text-parchment/50 hover:text-parchment transition-colors px-2 py-1.5"
+                  >
+                    <RefreshCw size={12} />
+                    새로고침
+                  </button>
                   <button
                     onClick={handleSaveSubtitles}
                     disabled={subtitleSaveStatus === "saving"}

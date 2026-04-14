@@ -6,6 +6,7 @@ import {
   writeProps,
   readProps,
   readDurationInFrames,
+  readCurrentSubtitlesJson,
   renderVideo,
   getRenderStatus,
   getDownloadUrl,
@@ -53,7 +54,13 @@ router.post("/props", (req: Request, res: Response) => {
     if (!koreanText || !hebrewText) {
       return res.status(400).json({ error: "koreanText, hebrewText 필수" });
     }
-    writeProps({ koreanText, hebrewText, videoFileName, audioFileName, episodeId });
+    // 기존 subtitlesJson·durationInFrames 유지 (덮어쓰지 않음)
+    const subtitlesJson = readCurrentSubtitlesJson();
+    const currentDuration = readDurationInFrames();
+    writeProps(
+      { koreanText, hebrewText, videoFileName, audioFileName, episodeId, subtitlesJson },
+      currentDuration
+    );
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
