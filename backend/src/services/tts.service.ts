@@ -9,16 +9,16 @@ import { applyWordReplacements } from "./wordReplacement.service";
 const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const AUDIO_BASE = process.env.AUDIO_STORAGE_PATH || "/app/storage/audio";
 
-// 성경 다큐 나레이션 목소리 — Chirp3-HD Iapetus (Gemini 최신 TTS)
+// 성경 다큐 나레이션 목소리 — Chirp3-HD Orus (중후한 중년 남성, 깊고 안정된 나레이터 톤)
 const NARRATION_VOICE = {
   languageCode: "ko-KR",
-  name: "ko-KR-Chirp3-HD-Iapetus",
+  name: "ko-KR-Chirp3-HD-Orus",
   ssmlGender: "MALE",
 };
 
 const NARRATION_AUDIO_CONFIG = {
   audioEncoding: "MP3",
-  speakingRate: 0.75,   // 0.62→0.75: 조금 빠르게 (자연스러운 다큐 나레이션)
+  speakingRate: 0.72,   // 0.75→0.72: 약간 느리게 — 중후한 나레이션 느낌 강화
   volumeGainDb: 1.5,
 };
 
