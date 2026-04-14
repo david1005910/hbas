@@ -192,7 +192,7 @@ export async function generateNarrationAudio(req: Request, res: Response, next: 
       console.log(`[Narration] SCRIPT fallback 사용 (SRT_KO 없음), TTS 변환 시작`);
     }
 
-    const filePath = await generateNarration(episode.id, narrationText);
+    const { filePath } = await generateNarration(episode.id, narrationText);
     const narrationUrl = filePath.replace("/app", "");
 
     await prisma.episode.update({

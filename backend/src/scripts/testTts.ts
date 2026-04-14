@@ -10,7 +10,7 @@ async function main() {
 이 서사는 단순한 우주 기원론을 넘어서, 하나님의 주권과 창조 질서의 선함을 선포하는 신학적 선언입니다.`;
 
   const episodeId = `test_${Date.now()}`;
-  const filePath = await generateNarration(episodeId, testText);
+  const { filePath } = await generateNarration(episodeId, testText);
 
   if (!fs.existsSync(filePath)) {
     console.error(`[FAIL] Audio file not created: ${filePath}`);
