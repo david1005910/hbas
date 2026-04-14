@@ -17,8 +17,9 @@ export interface WordReplacement {
   enabled: boolean;
 }
 
-/** 기본 치환 규칙 */
+/** 기본 치환 규칙 — 긴 패턴을 먼저 나열해야 부분 매칭 방지 */
 const DEFAULT_REPLACEMENTS: WordReplacement[] = [
+  { from: "여호와 하나님", to: "엘로힘", enabled: true },
   { from: "주 하나님", to: "엘로힘", enabled: true },
   { from: "하나님", to: "엘로힘", enabled: true },
 ];
