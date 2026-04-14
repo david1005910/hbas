@@ -118,14 +118,15 @@ export function readDurationInFrames(): number {
 function httpRequest(
   url: string,
   method: "GET" | "POST",
-  body?: object
+  body?: object,
+  timeoutMs = 30_000
 ): Promise<any> {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
     const options = {
       hostname: parsed.hostname,
-      port: parsed.port || 80,
-      path: parsed.pathname,
+      port: parsed.port ? parseInt(parsed.port, 10) : (parsed.protocol === "https:" ? 443 : 80),
+      path: parsed.pathname + parsed.search,
       method,
       headers: { "Content-Type": "application/json" },
     };
@@ -133,12 +134,21 @@ function httpRequest(
       let data = "";
       res.on("data", (chunk) => (data += chunk));
       res.on("end", () => {
+        if (res.statusCode && res.statusCode >= 400) {
+          let errMsg = data;
+          try { errMsg = JSON.parse(data)?.error ?? data; } catch {}
+          return reject(new Error(`HTTP ${res.statusCode}: ${errMsg}`));
+        }
         try {
           resolve(JSON.parse(data));
         } catch {
           resolve(data);
         }
       });
+    });
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      reject(new Error(`렌더 서버 응답 없음 (${timeoutMs / 1000}초 초과) — ${url}`));
     });
     req.on("error", reject);
     if (body) req.write(JSON.stringify(body));

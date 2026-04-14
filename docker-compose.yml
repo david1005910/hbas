@@ -9,6 +9,7 @@ services:
       - ./frontend/src:/app/src
     environment:
       - VITE_API_URL=http://localhost:4000
+      - VITE_REMOTION_URL=http://localhost:3002
     depends_on:
       - backend
     deploy:

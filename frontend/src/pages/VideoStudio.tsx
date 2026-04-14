@@ -267,19 +267,35 @@ export function VideoStudio() {
     },
   });
 
-  // 렌더 완료 폴링
+  // 렌더 완료 폴링 (최대 15분)
   function startPolling() {
     if (pollRef.current) clearInterval(pollRef.current);
+    const deadline = Date.now() + 15 * 60 * 1000;
+    let failCount = 0;
     pollRef.current = setInterval(async () => {
+      // 타임아웃
+      if (Date.now() > deadline) {
+        clearInterval(pollRef.current!);
+        pollRef.current = null;
+        setRenderStatus({ status: "error", error: "렌더링 시간 초과 (15분)", fileReady: false });
+        return;
+      }
       try {
         const status = await remotionApi.getRenderStatus();
+        failCount = 0;
         setRenderStatus(status);
         if (status.status === "done" || status.status === "error") {
           clearInterval(pollRef.current!);
           pollRef.current = null;
         }
       } catch {
-        // 일시적 연결 오류 무시
+        failCount++;
+        // 연속 5회 실패 시 렌더 서버 연결 불가로 처리
+        if (failCount >= 5) {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          setRenderStatus({ status: "error", error: "렌더 서버 연결 실패", fileReady: false });
+        }
       }
     }, 3000);
   }
