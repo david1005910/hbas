@@ -24,13 +24,14 @@ export interface RemotionProps {
 // ─── data.json 읽기/쓰기 ─────────────────────────────────────────────────────
 
 export function writeProps(props: RemotionProps, durationInFrames?: number): void {
-  // 1. data.json 업데이트 (CLI 렌더링용)
+  // 1. data.json 업데이트 (CLI 렌더링용) — subtitlesJson 포함해야 렌더 영상에 자막 반영됨
   const dataPath = path.join(PROJECT_PATH, "public", "data.json");
   const payload = {
     koreanText: props.koreanText,
     hebrewText: props.hebrewText,
     videoFileName: props.videoFileName ?? "",
     audioFileName: props.audioFileName ?? "narration.mp3",
+    subtitlesJson: props.subtitlesJson ?? "",
   };
   fs.writeFileSync(dataPath, JSON.stringify(payload, null, 2), "utf-8");
 

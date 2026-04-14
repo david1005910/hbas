@@ -120,19 +120,19 @@ export function VideoStudio() {
     }
   }
 
-  // 자막 저장 → Remotion 즉시 반영 후 스튜디오 뷰로 전환
+  // 자막 저장 → Remotion 즉시 반영
   async function handleSaveSubtitles() {
     setSubtitleSaveStatus("saving");
     setSubtitleSaveError("");
     try {
+      // 1. 자막 저장 (subtitles.json + Root.tsx + data.json 업데이트)
       await remotionApi.updateSubtitles(subtitles);
       setSubtitleSaveStatus("saved");
-      // Root.tsx 업데이트 후 Remotion 핫리로드 대기 → 스튜디오 전환
+      // 2. Remotion HMR 적용 후 미리보기 갱신 (1.5초 여유)
       setTimeout(() => {
         setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`);
-        setActiveView("studio");
-      }, 600);
-      setTimeout(() => setSubtitleSaveStatus("idle"), 4000);
+      }, 1500);
+      setTimeout(() => setSubtitleSaveStatus("idle"), 5000);
     } catch (err: any) {
       setSubtitleSaveError(err?.response?.data?.error ?? err.message);
       setSubtitleSaveStatus("error");
@@ -566,7 +566,12 @@ export function VideoStudio() {
                     )}
                   </button>
                   {subtitleSaveStatus === "saved" && (
-                    <span className="text-xs text-emerald-400">✓ 저장됨</span>
+                    <button
+                      onClick={() => setActiveView("studio")}
+                      className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+                    >
+                      ✓ 저장됨 — 미리보기 확인 →
+                    </button>
                   )}
                   {subtitleSaveStatus === "error" && (
                     <span className="text-xs text-red-400">⚠ {subtitleSaveError}</span>
