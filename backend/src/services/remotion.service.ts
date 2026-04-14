@@ -452,8 +452,8 @@ function extractAllHebrewNarration(script: string): string {
     .join(" ");
 }
 
-// 히브리어 라인당 목표 기본 문자 수 (니쿠드 제거 기준, 이미지 참조 ~45자)
-const HE_CHARS_PER_LINE = 45;
+// 히브리어 라인당 목표 기본 문자 수 (니쿠드 제거 기준, 한 화면에 40자 이내)
+const HE_CHARS_PER_LINE = 40;
 
 /** 히브리어 니쿠드·칸틸레이션 기호 제거 → 기본 문자만 */
 function stripNiqqud(text: string): string {
