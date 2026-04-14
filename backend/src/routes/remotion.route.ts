@@ -19,6 +19,7 @@ import {
 import {
   loadReplacements,
   saveReplacements,
+  applyWordReplacements,
   WordReplacement,
 } from "../services/wordReplacement.service";
 
@@ -160,7 +161,13 @@ router.post("/subtitles", (req: Request, res: Response) => {
     const { subtitles } = req.body;
     if (!Array.isArray(subtitles)) return res.status(400).json({ error: "subtitles 배열 필수" });
 
-    const subtitlesJson = JSON.stringify(subtitles);
+    // 한국어 자막 텍스트에 단어 치환 적용 (저장 전)
+    const applied = subtitles.map((s: any) => ({
+      ...s,
+      text: typeof s.text === "string" ? applyWordReplacements(s.text) : s.text,
+    }));
+
+    const subtitlesJson = JSON.stringify(applied);
 
     // subtitles.json 파일 저장
     const filePath = path.join(PROJECT_PATH, "public", "subtitles.json");

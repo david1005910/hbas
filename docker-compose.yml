@@ -27,6 +27,7 @@ services:
       - ./storage:/app/storage
       - ./storage/audio:/app/storage/audio
       - ./storage/bgm:/app/storage/bgm
+      - ./storage/config:/app/storage/config
       - ./service-account.json:/app/service-account.json:ro
       - /Users/david/Documents/my-video-project/my-video/public:/app/remotion-project/public
       - /Users/david/Documents/my-video-project/my-video/src:/app/remotion-project/src
