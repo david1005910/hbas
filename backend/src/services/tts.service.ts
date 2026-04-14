@@ -9,10 +9,10 @@ import { applyWordReplacements } from "./wordReplacement.service";
 const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const AUDIO_BASE = process.env.AUDIO_STORAGE_PATH || "/app/storage/audio";
 
-// 성경 다큐 나레이션 목소리 — Chirp3-HD Orus (중후한 중년 남성, 깊고 안정된 나레이터 톤)
+// 성경 다큐 나레이션 목소리 — Chirp3-HD Charon (차분하고 안정적인 정보전달형 나레이터)
 const NARRATION_VOICE = {
   languageCode: "ko-KR",
-  name: "ko-KR-Chirp3-HD-Orus",
+  name: "ko-KR-Chirp3-HD-Charon",
   ssmlGender: "MALE",
 };
 
