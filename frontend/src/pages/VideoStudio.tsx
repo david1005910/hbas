@@ -190,6 +190,14 @@ export function VideoStudio() {
       const result = await remotionApi.uploadVideo(file, setUploadProgress);
       setVideoFileName(result.fileName);
       refetchVideos();
+      // 업로드 완료 즉시 Remotion Studio 배경 교체
+      sendMutation.mutate({
+        koreanText,
+        hebrewText,
+        videoFileName: result.fileName,
+        audioFileName,
+        episodeId: selectedEpisodeId || undefined,
+      });
     } catch (err: any) {
       setUploadError(err?.response?.data?.error ?? err.message);
     } finally {
