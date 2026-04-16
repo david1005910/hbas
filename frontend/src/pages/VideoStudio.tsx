@@ -70,6 +70,7 @@ export function VideoStudio() {
   // 키프레임 갤러리에서 넘어온 경우 — 자동으로 Remotion 스튜디오로 전송
   useEffect(() => {
     if (!incomingProps?.fromKeyframe) return;
+    const refresh = () => setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 300);
     remotionApi.sendProps({
       koreanText: incomingProps.koreanText ?? "",
       hebrewText: incomingProps.hebrewText ?? "",
@@ -78,10 +79,7 @@ export function VideoStudio() {
       videoFileName: incomingProps.videoFileName ?? "",
       audioFileName: incomingProps.audioFileName ?? "narration.mp3",
       episodeId: incomingProps.episodeId,
-    }).then(() => {
-      // data.json 쓰기 완료 후 iframe 새로고침 — calculateMetadata가 최신값을 읽도록 300ms 여유
-      setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 300);
-    }).catch(() => {});
+    }).then(refresh).catch(refresh); // sendProps 성공·실패 모두 iframe 갱신
     // 5초 후 알림 배너 숨김
     const t = setTimeout(() => setFromKeyframeNotice(false), 5000);
     return () => clearTimeout(t);

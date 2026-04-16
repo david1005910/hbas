@@ -82,9 +82,7 @@ router.post("/props", (req: Request, res: Response) => {
   try {
     const { koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId, showSubtitle, showNarration } =
       req.body;
-    if (!koreanText || !hebrewText) {
-      return res.status(400).json({ error: "koreanText, hebrewText 필수" });
-    }
+    // koreanText/hebrewText는 선택 — 키프레임 전송 시 비어있을 수 있음
     const subtitlesJson = readCurrentSubtitlesJson();
     const currentDuration = readDurationInFrames();
     writeProps(
