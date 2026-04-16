@@ -1,5 +1,17 @@
 [
-  { "from": "여호와 하나님", "to": "엘로힘", "enabled": true },
-  { "from": "주 하나님", "to": "엘로힘", "enabled": true },
-  { "from": "하나님", "to": "엘로힘", "enabled": true }
+  {
+    "from": "여호와 하나님",
+    "to": "엘로힘",
+    "enabled": true
+  },
+  {
+    "from": "주 하나님",
+    "to": "엘로힘",
+    "enabled": true
+  },
+  {
+    "from": "하나님",
+    "to": "엘로힘",
+    "enabled": true
+  }
 ]

@@ -16,6 +16,8 @@ export interface SubEntry {
 export interface RemotionProps {
   koreanText: string;
   hebrewText: string;
+  englishText?: string;
+  language?: "ko" | "en";
   videoFileName?: string;
   audioFileName?: string;
   episodeId?: string;
@@ -26,6 +28,17 @@ export interface RenderStatus {
   status: "idle" | "rendering" | "done" | "error";
   error: string | null;
   fileReady: boolean;
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ChatActionResult {
+  type: "action" | "message";
+  message: string;
+  props?: Partial<RemotionProps>;
 }
 
 export const remotionApi = {
@@ -47,9 +60,9 @@ export const remotionApi = {
   sendKeyframe: (keyframeId: string) =>
     api.post<{ success: boolean; props: RemotionProps }>("/remotion/send-keyframe", { keyframeId }).then((r) => r.data),
 
-  // 에피소드 자막 텍스트 추출 (SCRIPT 나레이션KO / SRT_HE)
+  // 에피소드 자막 텍스트 추출 (SCRIPT 나레이션KO / SRT_HE / SRT_EN)
   getEpisodeSubtitle: (episodeId: string) =>
-    api.get<{ koreanText: string; hebrewText: string }>(
+    api.get<{ koreanText: string; hebrewText: string; englishText: string }>(
       `/remotion/episode-subtitle/${episodeId}`
     ).then((r) => r.data),
 
@@ -57,6 +70,12 @@ export const remotionApi = {
   generateNarration: (episodeId: string) =>
     api.post<{ success: boolean; fileName: string; textLength: number; durationSec?: number; durationInFrames?: number; subtitlesJson?: string }>(
       "/remotion/generate-narration", { episodeId }
+    ).then((r) => r.data),
+
+  // 영어 나레이션 TTS 생성 → public/narration_en.mp3
+  generateEnglishNarration: (episodeId: string) =>
+    api.post<{ success: boolean; fileName: string; textLength: number; durationSec?: number; durationInFrames?: number; subtitlesJson?: string }>(
+      "/remotion/generate-narration-en", { episodeId }
     ).then((r) => r.data),
 
   // 현재 자막 목록 조회
@@ -91,7 +110,57 @@ export const remotionApi = {
     }).then((r) => r.data);
   },
 
+  // Gemini AI 채팅 — VideoStudio 편집 명령
+  chat: (message: string, context: Partial<RemotionProps> & { subtitleCount?: number }, history: ChatMessage[]) =>
+    api.post<ChatActionResult>("/remotion/chat", { message, context, history }).then((r) => r.data),
+
   // public/ 내 동영상 목록
   listVideos: () =>
     api.get<{ files: string[] }>("/remotion/videos").then((r) => r.data.files),
+
+  // public/ 내 오디오 파일 목록
+  listAudios: () =>
+    api.get<{ files: string[] }>("/remotion/audios").then((r) => r.data.files),
+
+  // ── ElevenLabs ──────────────────────────────────────────────────
+
+  // ElevenLabs 음성 목록 조회
+  getElevenLabsVoices: () =>
+    api.get<{ voices: Array<{ voice_id: string; name: string; category: string; labels: Record<string, string>; preview_url: string | null }> }>(
+      "/remotion/elevenlabs/voices"
+    ).then((r) => r.data.voices),
+
+  // ElevenLabs 크레딧/API 키 확인
+  getElevenLabsUser: () =>
+    api.get<{ characterCount: number; characterLimit: number; keyValid: boolean }>("/remotion/elevenlabs/user").then((r) => r.data),
+
+  // ElevenLabs TTS 생성 → narration.mp3 교체
+  generateElevenLabsNarration: (params: {
+    episodeId: string;
+    voiceId: string;
+    modelId?: string;
+    stability?: number;
+    similarityBoost?: number;
+    style?: number;
+    language?: "ko" | "en";
+  }) =>
+    api.post<{ success: boolean; fileName: string; durationSec: number; durationInFrames: number; textLength: number }>(
+      "/remotion/elevenlabs/generate", params
+    ).then((r) => r.data),
+
+  // ── 오디오 업로드 ────────────────────────────────────────────────
+
+  // 나레이션 오디오 업로드 → public/narration.mp3 으로 덮어쓰기
+  uploadAudio: (file: File, onProgress?: (pct: number) => void) => {
+    const form = new FormData();
+    form.append("audio", file);
+    return api.post<{ success: boolean; fileName: string; originalName: string }>(
+      "/remotion/upload-audio", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (e) => {
+          if (onProgress && e.total) onProgress(Math.round((e.loaded * 100) / e.total));
+        },
+      }
+    ).then((r) => r.data);
+  },
 };

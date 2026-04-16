@@ -16,6 +16,8 @@ const RENDER_SERVER =
 export interface RemotionProps {
   koreanText: string;
   hebrewText: string;
+  englishText?: string;
+  language?: "ko" | "en";
   videoFileName?: string;
   audioFileName?: string;
   episodeId?: string;
@@ -30,6 +32,8 @@ export function writeProps(props: RemotionProps, durationInFrames?: number): voi
   const payload = {
     koreanText: props.koreanText,
     hebrewText: props.hebrewText,
+    englishText: props.englishText ?? "",
+    language: props.language ?? "ko",
     videoFileName: props.videoFileName ?? "",
     audioFileName: props.audioFileName ?? "narration.mp3",
     subtitlesJson: props.subtitlesJson ?? "",
@@ -46,6 +50,9 @@ function updateRootDefaultProps(props: RemotionProps, durationInFrames = 150): v
 
   const ko = JSON.stringify(props.koreanText);
   const he = JSON.stringify(props.hebrewText);
+  const en = JSON.stringify(props.englishText ?? "");
+  const langVal = props.language ?? "ko";
+  const lang = `"${langVal}" as const`;
   const vf = JSON.stringify(props.videoFileName ?? "");
   const af = JSON.stringify(props.audioFileName ?? "narration.mp3");
   const sj = JSON.stringify(props.subtitlesJson ?? "");
@@ -56,6 +63,8 @@ import { HelloWorld, myCompSchema } from './HelloWorld';
 const defaultProps = {
   koreanText: ${ko},
   hebrewText: ${he},
+  englishText: ${en},
+  language: ${lang},
   videoFileName: ${vf},
   audioFileName: ${af},
   subtitlesJson: ${sj},
@@ -328,7 +337,7 @@ export function getDownloadUrl(): string {
 
 export async function getEpisodeSubtitle(
   episodeId: string
-): Promise<{ koreanText: string; hebrewText: string }> {
+): Promise<{ koreanText: string; hebrewText: string; englishText: string }> {
   const episode = await prisma.episode.findUnique({
     where: { id: episodeId },
     include: { contents: { orderBy: { createdAt: "desc" } } },
@@ -337,6 +346,7 @@ export async function getEpisodeSubtitle(
 
   let koreanText = "";
   let hebrewText = "";
+  let englishText = "";
 
   // ── 한국어: SCRIPT 나레이션(KO) → SRT_KO → 에피소드 제목 ─────────────────
   const scriptContent = episode.contents.find((c) => c.contentType === "SCRIPT");
@@ -370,13 +380,23 @@ export async function getEpisodeSubtitle(
   // 최종 fallback: titleHe
   if (!hebrewText) hebrewText = episode.titleHe ?? "";
 
+  // ── 영어: SRT_EN → SCRIPT EN 나레이션 → titleKo 번역 없으므로 빈 문자열 ─
+  const srtEn = episode.contents.find((c) => c.contentType === "SRT_EN");
+  if (srtEn?.content) {
+    englishText = srtSingleText(srtEn.content);
+  }
+  if (!englishText && scriptContent?.content) {
+    englishText = extractAllEnglishNarration(scriptContent.content);
+  }
+
   console.log(`[Remotion] 에피소드 ${episodeId} 자막 추출:`, {
     koLen: koreanText.length,
     heLen: hebrewText.length,
+    enLen: englishText.length,
     hePreview: hebrewText.slice(0, 40),
   });
 
-  return { koreanText, hebrewText };
+  return { koreanText, hebrewText, englishText };
 }
 
 /** SRT 문자열 → 텍스트만 추출 (타임코드·인덱스 제거) */
@@ -596,6 +616,23 @@ async function buildVerseSubtitlePairs(
   }
 }
 
+/** SCRIPT에서 영어 나레이션(EN) 라인 전체 추출 */
+export function extractAllEnglishNarration(script: string): string {
+  if (!script) return "";
+  const cleaned = script.replace(/\*\*/g, "");
+  // "Narration(EN):", "나레이션(EN):", "Narration:" 등 다양한 표기 지원
+  const matches = cleaned.match(
+    /(?:Narration|나레이션)\s*[\(（]?\s*EN\s*[\)）]?\s*[:\-]\s*(.+)/gi
+  ) ?? [];
+  if (matches.length > 0) {
+    return matches
+      .map((m) => m.replace(/(?:Narration|나레이션)\s*[\(（]?\s*EN\s*[\)）]?\s*[:\-]\s*/i, "").trim())
+      .filter(Boolean)
+      .join(" ");
+  }
+  return "";
+}
+
 // ─── SCRIPT에서 한국어 나레이션 전체 추출 ────────────────────────────────────
 
 export function extractAllKoreanNarration(script: string): string {
@@ -803,5 +840,74 @@ export async function generateNarrationForRemotionPublic(
     `[Remotion-TTS] ${narrationDuration.toFixed(2)}초 → ${durationInFrames}프레임, 자막 ${timings.length}개`
   );
 
+  return { fileName, textLength: narrationText.length, durationSec: narrationDuration, durationInFrames, subtitlesJson };
+}
+
+// ─── 에피소드 영어 나레이션 생성 → Remotion public/ 에 저장 ──────────────────
+
+export async function generateEnglishNarrationForRemotionPublic(
+  episodeId: string
+): Promise<{ fileName: string; textLength: number; durationSec: number; durationInFrames: number; subtitlesJson?: string }> {
+  const episode = await prisma.episode.findUnique({
+    where: { id: episodeId },
+    include: { contents: { orderBy: { createdAt: "desc" } } },
+  });
+  if (!episode) throw new Error("Episode not found");
+
+  let narrationText = "";
+
+  // 우선순위: SRT_EN → SCRIPT Narration(EN) → titleKo (영어 없으면 에러)
+  const srtEn = episode.contents.find((c) => c.contentType === "SRT_EN");
+  if (srtEn?.content) {
+    narrationText = srtSingleText(srtEn.content);
+    if (narrationText) console.log(`[Remotion-TTS-EN] SRT_EN 사용 (${narrationText.length}자)`);
+  }
+
+  if (!narrationText) {
+    const scriptContent = episode.contents.find((c) => c.contentType === "SCRIPT");
+    if (scriptContent?.content) {
+      narrationText = extractAllEnglishNarration(scriptContent.content);
+      if (narrationText) console.log(`[Remotion-TTS-EN] SCRIPT Narration(EN) 사용 (${narrationText.length}자)`);
+    }
+  }
+
+  if (!narrationText) {
+    throw new Error("영어 나레이션 텍스트가 없습니다. SRT_EN 또는 SCRIPT에 Narration(EN) 내용을 먼저 생성하세요.");
+  }
+
+  // Google TTS 영어 생성
+  const { filePath: storagePath, timings } = await generateNarration(episodeId, narrationText, "en");
+
+  const destDir = path.join(PROJECT_PATH, "public");
+  fs.mkdirSync(destDir, { recursive: true });
+  const fileName = "narration_en.mp3";
+  const destPath = path.join(destDir, fileName);
+  fs.copyFileSync(storagePath, destPath);
+
+  const FPS = 30;
+  const narrationDuration = getMediaDuration(destPath);
+  const durationInFrames = Math.ceil((narrationDuration + 1) * FPS);
+
+  // 히브리어 배분
+  const episodeHebrew = await fetchEpisodeHebrew(episode as any);
+  let finalTimings = timings;
+  if (episodeHebrew) {
+    finalTimings = distributeHebrewToTimings(timings, episodeHebrew, narrationDuration);
+  }
+
+  const subtitlesJson = JSON.stringify(finalTimings);
+  fs.writeFileSync(path.join(destDir, "subtitles.json"), subtitlesJson, "utf-8");
+
+  const currentProps = readProps();
+  const updatedProps: RemotionProps = {
+    ...(currentProps ?? { koreanText: "", hebrewText: "" }),
+    englishText: narrationText,
+    language: "en",
+    audioFileName: fileName,
+    subtitlesJson,
+  };
+  writeProps(updatedProps, durationInFrames);
+
+  console.log(`[Remotion-TTS-EN] ${narrationDuration.toFixed(2)}초 → ${durationInFrames}프레임`);
   return { fileName, textLength: narrationText.length, durationSec: narrationDuration, durationInFrames, subtitlesJson };
 }

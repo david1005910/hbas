@@ -10,15 +10,31 @@ const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const AUDIO_BASE = process.env.AUDIO_STORAGE_PATH || "/app/storage/audio";
 
 // 성경 다큐 나레이션 목소리 — Chirp3-HD Charon (차분하고 안정적인 정보전달형 나레이터)
-const NARRATION_VOICE = {
+const NARRATION_VOICE_KO = {
   languageCode: "ko-KR",
   name: "ko-KR-Chirp3-HD-Charon",
   ssmlGender: "MALE",
 };
 
+// 영어 나레이션 목소리 — Chirp3-HD (안정적이고 신뢰감 있는 남성 나레이터)
+const NARRATION_VOICE_EN = {
+  languageCode: "en-US",
+  name: "en-US-Chirp3-HD-Charon",
+  ssmlGender: "MALE",
+};
+
+// 하위 호환용 별칭
+const NARRATION_VOICE = NARRATION_VOICE_KO;
+
 const NARRATION_AUDIO_CONFIG = {
   audioEncoding: "MP3",
   speakingRate: 0.72,   // 0.75→0.72: 약간 느리게 — 중후한 나레이션 느낌 강화
+  volumeGainDb: 1.5,
+};
+
+const NARRATION_AUDIO_CONFIG_EN = {
+  audioEncoding: "MP3",
+  speakingRate: 0.85,   // 영어는 한국어보다 빠르게
   volumeGainDb: 1.5,
 };
 
@@ -117,13 +133,13 @@ function cleanNarrationText(text: string): string {
  * Google TTS API 단건 호출 → MP3 Buffer 반환
  * Chirp3-HD는 SSML 미지원 → plain text 사용
  */
-async function callTtsApi(text: string, token: string): Promise<Buffer> {
+async function callTtsApi(text: string, token: string, lang: "ko" | "en" = "ko"): Promise<Buffer> {
   const response = await axios.post(
     TTS_ENDPOINT,
     {
       input: { text },
-      voice: NARRATION_VOICE,
-      audioConfig: NARRATION_AUDIO_CONFIG,
+      voice: lang === "en" ? NARRATION_VOICE_EN : NARRATION_VOICE_KO,
+      audioConfig: lang === "en" ? NARRATION_AUDIO_CONFIG_EN : NARRATION_AUDIO_CONFIG,
     },
     { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
   );
@@ -145,14 +161,15 @@ export interface NarrationResult {
 
 export async function generateNarration(
   episodeId: string,
-  inputText: string
+  inputText: string,
+  language: "ko" | "en" = "ko"
 ): Promise<NarrationResult> {
   const token = await getGcpAccessToken();
 
   const isSrt = /^\d+\s*\n\d{2}:\d{2}:\d{2}/.test(inputText.trim());
   const base = isSrt ? extractSrtText(inputText) : inputText.trim();
-  // 단어 치환 적용 (예: 하나님 → 엘로힘) 후 텍스트 정제
-  const extracted = cleanNarrationText(applyWordReplacements(base));
+  // 한국어만 단어 치환 적용 (영어는 불필요)
+  const extracted = cleanNarrationText(language === "ko" ? applyWordReplacements(base) : base);
 
   // 바이트 한도 (한글 3바이트/자, 4800 bytes)
   let cleanedText = "";
@@ -192,7 +209,7 @@ export async function generateNarration(
       if (!seg) continue;
 
       console.log(`[TTS] 분절 ${i + 1}/${rawSegments.length}: "${seg.slice(0, 40)}"`);
-      const buf = await callTtsApi(seg, token);
+      const buf = await callTtsApi(seg, token, language);
       const segPath = path.join(os.tmpdir(), `narr_seg_${ts}_${i}.mp3`);
       fs.writeFileSync(segPath, buf);
       tempFiles.push(segPath);
