@@ -80,7 +80,7 @@ router.get("/props", (_req: Request, res: Response) => {
 // POST /api/v1/remotion/props — data.json 업데이트
 router.post("/props", (req: Request, res: Response) => {
   try {
-    const { koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId } =
+    const { koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId, showSubtitle, showNarration } =
       req.body;
     if (!koreanText || !hebrewText) {
       return res.status(400).json({ error: "koreanText, hebrewText 필수" });
@@ -88,7 +88,10 @@ router.post("/props", (req: Request, res: Response) => {
     const subtitlesJson = readCurrentSubtitlesJson();
     const currentDuration = readDurationInFrames();
     writeProps(
-      { koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId, subtitlesJson },
+      { koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId, subtitlesJson,
+        showSubtitle: showSubtitle !== false,
+        showNarration: showNarration !== false,
+      },
       currentDuration
     );
     res.json({ success: true });
