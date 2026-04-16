@@ -91,6 +91,10 @@ export const remotionApi = {
   autoFillHebrew: (episodeId: string) =>
     api.post<{ subtitles: SubEntry[] }>("/remotion/subtitles/auto-hebrew", { episodeId }).then((r) => r.data.subtitles),
 
+  // 기존 자막에 영어(SRT_EN) 자동 배분
+  autoFillEnglish: (episodeId: string) =>
+    api.post<{ subtitles: SubEntry[] }>("/remotion/subtitles/auto-english", { episodeId }).then((r) => r.data.subtitles),
+
   // 단어 치환 규칙 조회
   getWordReplacements: () =>
     api.get<{ replacements: WordReplacement[] }>("/remotion/word-replacements").then((r) => r.data.replacements),

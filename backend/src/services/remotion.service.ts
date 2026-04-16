@@ -686,6 +686,32 @@ async function fetchEpisodeHebrew(
   return episode.titleHe ?? "";
 }
 
+/** SRT 파일에서 씬별 텍스트를 배열로 추출 (인덱스·타임코드 제외) */
+function extractSrtAllScenes(srt: string): string[] {
+  return srt
+    .replace(/^\uFEFF/, "")
+    .split(/\n\s*\n/)
+    .map((block) => {
+      const lines = block.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+      return lines
+        .filter((l) => !/^\d+$/.test(l) && !/^\d{2}:\d{2}:\d{2}/.test(l))
+        .join(" ");
+    })
+    .filter(Boolean);
+}
+
+/** 영어 씬 배열을 타이밍 배열의 enText에 순서대로 매핑 */
+function distributeEnglishToTimings(
+  timings: SubtitleTiming[],
+  englishScenes: string[]
+): SubtitleTiming[] {
+  if (!englishScenes.length) return timings;
+  return timings.map((t, i) => ({
+    ...t,
+    enText: englishScenes[i] ?? englishScenes[englishScenes.length - 1] ?? "",
+  }));
+}
+
 // ─── 기존 자막에 히브리어 자동 배분 ──────────────────────────────────────────
 
 export async function distributeHebrewForEpisode(episodeId: string): Promise<SubtitleTiming[]> {
@@ -715,6 +741,40 @@ export async function distributeHebrewForEpisode(episodeId: string): Promise<Sub
   writeProps({ ...(currentProps ?? { koreanText: "", hebrewText: episodeHebrew }), subtitlesJson }, currentDuration);
 
   console.log(`[Subtitle] 히브리어 배분 완료: ${updated.filter((s) => s.heText).length}개 항목`);
+  return updated;
+}
+
+// ─── 기존 자막에 영어 자동 배분 (SRT_EN → enText) ─────────────────────────────
+
+export async function distributeEnglishForEpisode(episodeId: string): Promise<SubtitleTiming[]> {
+  const episode = await prisma.episode.findUnique({
+    where: { id: episodeId },
+    include: { contents: { orderBy: { createdAt: "desc" } } },
+  });
+  if (!episode) throw new Error("Episode not found");
+
+  const subtitlesPath = path.join(PROJECT_PATH, "public", "subtitles.json");
+  if (!fs.existsSync(subtitlesPath)) throw new Error("subtitles.json 파일이 없습니다. 나레이션을 먼저 생성하세요.");
+
+  const existing: SubtitleTiming[] = JSON.parse(fs.readFileSync(subtitlesPath, "utf-8"));
+  if (!Array.isArray(existing) || existing.length === 0) throw new Error("자막 항목이 없습니다.");
+
+  const srtEn = episode.contents.find((c) => c.contentType === "SRT_EN");
+  if (!srtEn?.content) throw new Error("SRT_EN 컨텐츠가 없습니다. 에피소드 상세 페이지에서 SRT 3종을 먼저 생성하세요.");
+
+  const englishScenes = extractSrtAllScenes(srtEn.content);
+  if (!englishScenes.length) throw new Error("SRT_EN에서 텍스트를 추출할 수 없습니다.");
+
+  const updated = distributeEnglishToTimings(existing, englishScenes);
+  const subtitlesJson = JSON.stringify(updated);
+
+  fs.writeFileSync(subtitlesPath, subtitlesJson, "utf-8");
+
+  const currentProps = readProps();
+  const currentDuration = readDurationInFrames();
+  writeProps({ ...(currentProps ?? { koreanText: "", hebrewText: "" }), subtitlesJson }, currentDuration);
+
+  console.log(`[Subtitle] 영어 배분 완료: ${updated.filter((s) => s.enText).length}개 항목 (SRT_EN ${englishScenes.length}씬)`);
   return updated;
 }
 

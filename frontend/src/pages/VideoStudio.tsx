@@ -159,20 +159,44 @@ export function VideoStudio() {
         return;
       }
 
-      // heText 없는 항목이 있고 에피소드가 선택된 경우 → 자동 배분
+      // heText 없는 항목이 있고 에피소드가 선택된 경우 → 히브리어 자동 배분
       const hasNoHeText = loaded.every((s) => !s.heText);
       if (hasNoHeText && selectedEpisodeId) {
         try {
           const filled = await remotionApi.autoFillHebrew(selectedEpisodeId);
           if (filled.length > 0) loaded = filled;
         } catch {
-          // 배분 실패해도 한국어만으로 편집 가능
+          // 배분 실패해도 편집 가능
         }
       }
 
-      setSubtitles(loaded.map((s) => ({ ...s, heText: s.heText ?? "" })));
+      // enText 없는 항목이 있고 에피소드가 선택된 경우 → 영어 자동 배분 (SRT_EN)
+      const hasNoEnText = loaded.every((s) => !s.enText);
+      if (hasNoEnText && selectedEpisodeId) {
+        try {
+          const filled = await remotionApi.autoFillEnglish(selectedEpisodeId);
+          if (filled.length > 0) loaded = filled;
+        } catch {
+          // SRT_EN 없으면 그냥 진행 (에러 무시)
+        }
+      }
+
+      setSubtitles(loaded.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
     } catch (err: any) {
       setSubtitleLoadError(err?.response?.data?.error ?? "자막 불러오기 실패");
+    }
+  }
+
+  // 영어 자막 자동 배분 (SRT_EN → enText)
+  async function handleAutoFillEnglish() {
+    if (!selectedEpisodeId) return;
+    try {
+      const filled = await remotionApi.autoFillEnglish(selectedEpisodeId);
+      if (filled.length > 0) {
+        setSubtitles(filled.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
+      }
+    } catch (err: any) {
+      setSubtitleSaveError(err?.response?.data?.error ?? "영어 배분 실패");
     }
   }
 
@@ -594,8 +618,19 @@ export function VideoStudio() {
                 🇰🇷 한국어
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   setLanguage("en");
+                  // enText가 없으면 SRT_EN에서 자동 배분
+                  let subs = subtitles;
+                  if (subtitles.length > 0 && subtitles.every((s) => !s.enText) && selectedEpisodeId) {
+                    try {
+                      const filled = await remotionApi.autoFillEnglish(selectedEpisodeId);
+                      if (filled.length > 0) {
+                        subs = filled.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" }));
+                        setSubtitles(subs);
+                      }
+                    } catch { /* SRT_EN 없으면 무시 */ }
+                  }
                   sendMutation.mutate({ koreanText, hebrewText, englishText, language: "en", videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined });
                 }}
                 className={`flex-1 py-2 rounded-xl text-xs font-body border transition-all ${language === "en" ? "border-blue-400/60 text-blue-200" : "border-white/20 text-white/50 hover:text-white/80"}`}
@@ -1299,6 +1334,16 @@ export function VideoStudio() {
                     <RefreshCw size={12} />
                     새로고침
                   </button>
+                  {selectedEpisodeId && (
+                    <button
+                      onClick={handleAutoFillEnglish}
+                      title="SRT_EN에서 영어 자막 자동 배분"
+                      className="flex items-center gap-1 text-xs text-blue-300/70 hover:text-blue-200 transition-colors px-2 py-1.5 border border-blue-400/20 rounded-lg"
+                      style={{ background: "rgba(30,80,200,0.12)" }}
+                    >
+                      🇺🇸 영어 자동 배분
+                    </button>
+                  )}
                   <button
                     onClick={handleSaveSubtitles}
                     disabled={subtitleSaveStatus === "saving"}
