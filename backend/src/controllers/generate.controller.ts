@@ -119,10 +119,11 @@ export async function generateSrt(req: Request, res: Response, next: NextFunctio
       data: [
         { episodeId: episode.id, contentType: "SRT_KO", content: pack.ko, aiModel: process.env.GEMINI_MODEL },
         { episodeId: episode.id, contentType: "SRT_HE", content: pack.he, aiModel: process.env.GEMINI_MODEL },
+        { episodeId: episode.id, contentType: "SRT_EN", content: pack.en, aiModel: process.env.GEMINI_MODEL },
       ],
     });
 
-    res.json({ message: "SRT 2종 생성 완료 (한국어·히브리어)", types: ["SRT_KO", "SRT_HE"] });
+    res.json({ message: "SRT 3종 생성 완료 (한국어·히브리어·영어)", types: ["SRT_KO", "SRT_HE", "SRT_EN"] });
   } catch (err) { next(err); }
 }
 
