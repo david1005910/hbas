@@ -5,6 +5,9 @@ import {
   searchVerses,
   ingestVerse,
   getIngestStatus,
+  startBibleDownload,
+  startEmbeddingGeneration,
+  getDownloadProgress,
 } from "../services/ragEmbedding.service";
 
 const router = Router();
@@ -77,6 +80,38 @@ router.post("/ingest-file", async (req: Request, res: Response) => {
     }
 
     res.json({ success: true, ingested: total, files: processed });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/v1/rag/download — Sefaria에서 히브리어 성경 다운로드 (백그라운드)
+router.post("/download", async (req: Request, res: Response) => {
+  try {
+    const bookId = req.body.bookId ? parseInt(String(req.body.bookId)) : undefined;
+    const progress = getDownloadProgress();
+    if (progress.running) {
+      return res.json({ message: "이미 다운로드 중입니다.", progress });
+    }
+    startBibleDownload(bookId);
+    res.json({ message: bookId ? `bookId=${bookId} 다운로드 시작` : "전체 히브리어 성경 다운로드 시작 (백그라운드)", started: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/v1/rag/download/progress — 다운로드 진행 상황
+router.get("/download/progress", (_req: Request, res: Response) => {
+  res.json(getDownloadProgress());
+});
+
+// POST /api/v1/rag/embed — 저장된 구절 임베딩 생성 (백그라운드)
+router.post("/embed", async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(parseInt(String(req.body.limit || "200")), 1000);
+    const bookId = req.body.bookId ? parseInt(String(req.body.bookId)) : undefined;
+    startEmbeddingGeneration(limit, bookId);
+    res.json({ message: `${limit}절 임베딩 생성 시작 (백그라운드)`, started: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

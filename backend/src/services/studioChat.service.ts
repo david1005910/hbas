@@ -1,10 +1,11 @@
 import { genAI } from "../config/gemini";
+import { searchVerses } from "./ragEmbedding.service";
 
-const STUDIO_SYSTEM_PROMPT = `You are an AI assistant embedded in the Hebrew Bible Video Studio.
-Your job is to help the user edit video props (subtitles, text, language, audio file) and answer questions about the video.
+const STUDIO_SYSTEM_PROMPT = `You are an AI assistant embedded in the Hebrew Bible Video Studio (히브리어 성경 비디오 스튜디오).
+Your role: (1) help edit video props, and (2) answer questions about the Hebrew Bible using provided verse context.
 
 You can respond in two modes:
-1. **Action mode** – When the user asks you to change something, respond with JSON only (no markdown, no explanation):
+1. **Action mode** – When asked to change something, respond with JSON only:
    {
      "action": "update_props",
      "props": {
@@ -18,18 +19,16 @@ You can respond in two modes:
      "message": "Brief Korean explanation of what changed"
    }
 
-2. **Chat mode** – For questions, explanations, or requests you cannot handle as props changes, respond with plain text in Korean.
+2. **Chat mode** – For Bible questions or other explanations, respond in Korean plain text.
+   When Bible verse context is provided, use it to give accurate answers based on the Hebrew original.
+   Translate Hebrew text directly — do NOT use standard Bible translations (개역개정, KJV, NIV, etc.).
+   Provide your own fresh, accurate translation from the Hebrew.
 
 Guidelines:
 - Always respond in Korean unless the user writes in English
-- If the user asks to change subtitle text, put the new text in the appropriate field (koreanText or englishText)
-- If the user asks to switch language to English, set language="en"
-- If the user asks to switch language to Korean, set language="ko"
-- For Hebrew text changes, update hebrewText
-- If you cannot fulfill the request (e.g. change font color — requires code change), explain in Korean what limitation exists and suggest what they can do
-- Keep responses concise
-
-Current context will be provided with each message.`;
+- For subtitle/text changes: use action mode
+- For Bible questions: use the provided verse context, translate directly from Hebrew
+- Keep responses concise but informative`;
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -62,6 +61,27 @@ export async function studioChat(
     systemInstruction: STUDIO_SYSTEM_PROMPT,
   });
 
+  // 성경 관련 질문이면 벡터 검색으로 관련 구절 가져오기
+  let ragBlock = "";
+  const isBibleQuery = /성경|히브리|구절|번역|창세기|출애굽|시편|창|출|민|신|수|삿|룻|삼|왕|대|스|느|에|욥|잠|전|아|사|렘|겔|단|호|욜|암|옵|욘|미|나|합|습|학|슥|말|genesis|exodus|psalm|hebrew|bible|verse|chapter|translate|what does/i.test(userMessage);
+
+  if (isBibleQuery) {
+    try {
+      const results = await searchVerses(userMessage, 5);
+      if (results.length > 0) {
+        ragBlock = `\n[관련 히브리어 성경 구절 (벡터 검색 결과)]\n`;
+        for (const r of results) {
+          ragBlock += `• ${r.bookNameKo} ${r.chapter}:${r.verse} — ${r.hebrewText}`;
+          if (r.koreanText) ragBlock += ` (참고: ${r.koreanText.slice(0, 50)})`;
+          ragBlock += `\n`;
+        }
+        ragBlock += `위 히브리어 원문에서 직접 번역하여 답변하세요. 기존 성경 번역(개역개정, KJV 등) 인용 금지.\n`;
+      }
+    } catch {
+      // 검색 실패 시 무시 (임베딩 없으면 결과 없음)
+    }
+  }
+
   const contextBlock = `
 [현재 비디오 상태]
 - 언어: ${context.language === "en" ? "영어 (English)" : "한국어"}
@@ -71,7 +91,7 @@ export async function studioChat(
 - 배경 영상: ${context.videoFileName || "(없음)"}
 - 오디오 파일: ${context.audioFileName || "narration.mp3"}
 - 자막 항목 수: ${context.subtitleCount ?? 0}개
-`;
+${ragBlock}`;
 
   // Build chat history for multi-turn
   const chat = model.startChat({
