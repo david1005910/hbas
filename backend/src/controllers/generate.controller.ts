@@ -102,6 +102,18 @@ export async function generateAnimPrompt(req: Request, res: Response, next: Next
   }
 }
 
+/** SCRIPT에서 씬별 히브리어 나레이션을 추출해 줄바꿈으로 이어 붙임 */
+function extractHebrewNarrationLines(script: string): string {
+  const lines: string[] = [];
+  const re = /나레이션\s*[\(（]?\s*HE\s*[\)）]?\s*[:\-]\s*(.+)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(script)) !== null) {
+    const t = m[1].trim();
+    if (t) lines.push(t);
+  }
+  return lines.join("\n");
+}
+
 export async function generateSrt(req: Request, res: Response, next: NextFunction) {
   try {
     const episode = await getEpisodeOrFail(req.params.id, res);
@@ -113,7 +125,10 @@ export async function generateSrt(req: Request, res: Response, next: NextFunctio
     });
     if (!latestScript) return res.status(400).json({ error: "먼저 스크립트를 생성하세요" });
 
-    const pack = await generateSrtPack(episode, latestScript.content);
+    // 스크립트에서 히브리어 원문 추출 → SRT 번역 기준으로 사용
+    const hebrewSource = extractHebrewNarrationLines(latestScript.content);
+
+    const pack = await generateSrtPack(episode, latestScript.content, hebrewSource || undefined);
 
     await prisma.generatedContent.createMany({
       data: [

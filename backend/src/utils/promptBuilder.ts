@@ -13,7 +13,14 @@ export function buildScriptPrompt(ep: EpisodeCtx): string {
 참조 절: ${ep.verseRange || "자동 선택"}
 씬 수: ${ep.sceneCount}개
 
-다음 형식으로 한국어+히브리어 이중 언어 에피소드 대본을 생성해주세요:
+⚠️ 번역 원칙 (반드시 준수):
+- 한국어 나레이션: 기존 공인 성경(개역개정, 개역한글, 공동번역, 새번역 등)의 표현을 그대로 인용하지 마세요.
+  히브리어 원문의 어휘·어순·뉘앙스를 살려 AI가 직접 번역한 자연스러운 현대 한국어로 작성하세요.
+- 히브리어 나레이션: 마소라 텍스트 원문을 그대로 사용하세요.
+  나레이션(EN) 항목도 함께 작성하세요: 히브리어 원문에서 AI가 직접 번역한 자연스러운 현대 영어로,
+  KJV·NIV·ESV·NASB 등 기존 영어 성경 표현을 그대로 사용하지 마세요.
+
+다음 형식으로 에피소드 대본을 생성해주세요:
 
 【에피소드 제목】
 - 한국어:
@@ -26,6 +33,7 @@ export function buildScriptPrompt(ep: EpisodeCtx): string {
   장면설명(KO):
   나레이션(KO):
   나레이션(HE):
+  나레이션(EN):
   감정톤:
 
 (씬 ${ep.sceneCount}까지 반복)
@@ -52,22 +60,28 @@ export function buildAnimPromptRequest(ep: EpisodeCtx): string {
 `;
 }
 
-export function buildSrtPrompt(ep: EpisodeCtx, script: string): string {
+export function buildSrtPrompt(ep: EpisodeCtx, script: string, hebrewSource?: string): string {
+  const heSection = hebrewSource
+    ? `\n히브리어 원문 (직접 번역 기준):\n${hebrewSource}\n`
+    : "";
   return `
-다음 대본을 바탕으로 ${ep.sceneCount}개 씬에 맞는 자막 텍스트를 생성해주세요.
-총 영상 길이는 약 ${Math.floor((ep as any).targetDuration / 60)}분입니다.
-
-대본:
+당신은 히브리어 성경 전문 번역가입니다.
+다음 대본과 히브리어 원문을 바탕으로 ${ep.sceneCount}개 씬에 맞는 자막 텍스트를 생성해주세요.
+${heSection}
+대본 (씬 구성 참고용):
 ${script}
 
-출력 형식 (JSON):
+⚠️ 번역 규칙:
+- 한국어: 개역개정·개역한글·공동번역 등 기존 성경 표현 인용 금지. 히브리어 원문에서 AI가 직접 번역한 자연스러운 현대 한국어.
+- 영어: KJV·NIV·ESV 등 기존 영어 성경 인용 금지. 히브리어 원문에서 AI가 직접 번역한 자연스러운 현대 영어.
+- 히브리어: 마소라 텍스트 원문 그대로 사용.
+
+출력 형식 (JSON only):
 {
   "ko": ["씬1 한국어 자막", "씬2 한국어 자막", ...],
   "he": ["씬1 히브리어 자막", "씬2 히브리어 자막", ...],
   "en": ["Scene 1 English subtitle", "Scene 2 English subtitle", ...]
 }
-
-히브리어는 반드시 히브리 문자로 작성하세요.
 `;
 }
 
