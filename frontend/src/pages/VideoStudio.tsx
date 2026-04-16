@@ -227,21 +227,30 @@ export function VideoStudio() {
     }
   }
 
-  // 한국어 자막 30자 분할: 각 entry의 text가 30자 초과면 단어 경계로 자름
-  function handleSplitKoreanTo30() {
+  // 텍스트를 maxChars 이내 단어 경계로 줄 분할 → '\n' 구분 문자열 반환
+  function splitTextAt(text: string, maxChars = 30): string {
+    if (!text) return text;
+    const words = text.replace(/\n/g, " ").split(/\s+/).filter(Boolean);
+    const lines: string[] = [];
+    let cur = "";
+    for (const w of words) {
+      if (!cur) { cur = w; }
+      else if (cur.length + 1 + w.length <= maxChars) { cur += " " + w; }
+      else { lines.push(cur); cur = w; }
+    }
+    if (cur) lines.push(cur);
+    return lines.join("\n");
+  }
+
+  // 한국어·영어 자막 모두 30자 이내로 분할
+  function handleSplitTo30() {
     const MAX = 30;
     setSubtitles((prev) =>
-      prev.map((s) => {
-        if (!s.text || s.text.length <= MAX) return s;
-        const words = s.text.split(/\s+/).filter(Boolean);
-        let line = "";
-        for (const w of words) {
-          if (!line) { line = w; continue; }
-          if (line.length + 1 + w.length <= MAX) { line += " " + w; }
-          else { line += "\n" + w; }
-        }
-        return { ...s, text: line };
-      })
+      prev.map((s) => ({
+        ...s,
+        text:   s.text   ? splitTextAt(s.text,   MAX) : s.text,
+        enText: s.enText ? splitTextAt(s.enText, MAX) : s.enText,
+      }))
     );
   }
 
@@ -1451,15 +1460,17 @@ export function VideoStudio() {
                       >
                         🇺🇸 영어 자동 배분
                       </button>
-                      <button
-                        onClick={handleSplitKoreanTo30}
-                        title="한국어 자막을 30자 이내로 자동 분할"
-                        className="flex items-center gap-1 text-xs text-white/50 hover:text-white/80 transition-colors px-2 py-1.5 border border-white/15 rounded-lg"
-                        style={{ background: "rgba(255,255,255,0.06)" }}
-                      >
-                        ✂ 30자 분할
-                      </button>
                     </>
+                  )}
+                  {subtitles.length > 0 && (
+                    <button
+                      onClick={handleSplitTo30}
+                      title="한국어·영어 자막을 30자 이내로 자동 분할"
+                      className="flex items-center gap-1 text-xs text-white/50 hover:text-white/80 transition-colors px-2 py-1.5 border border-white/15 rounded-lg"
+                      style={{ background: "rgba(255,255,255,0.06)" }}
+                    >
+                      ✂ 30자 분할
+                    </button>
                   )}
                   <button
                     onClick={handleSaveSubtitles}

@@ -666,17 +666,17 @@ export function extractAllKoreanNarration(script: string): string {
 
 // ─── 히브리어 텍스트 정리 (Sefaria 편집 주석·단락 기호 제거) ──────────────────
 
-/** Sefaria SRT/API에서 오는 히브리어 텍스트의 편집 주석·특수기호 제거 */
+/** Sefaria SRT/API에서 오는 히브리어 텍스트의 편집 주석·특수기호·유니코드 제어문자 제거 */
 function cleanHebrewForDisplay(text: string): string {
   return text
-    .replace(/\u202B/g, "")                      // RTL 마커
-    .replace(/\*([\(（][^)）]*[\)）])/g, "")       // *(주석) 형태 편집 주석
-    .replace(/\([\u0591-\u05FF\s,]+\)/g, "")      // 히브리어 괄호 주석
-    .replace(/\{[^\}]*\}/g, "")                   // {ס}, {פ} 단락 기호
-    .replace(/&nbsp;/g, " ")                      // HTML 엔티티
-    .replace(/&[a-zA-Z]+;/g, "")                  // 기타 HTML 엔티티
-    .replace(/<[^>]*>/g, "")                      // HTML 태그
-    .replace(/\s{2,}/g, " ")                      // 연속 공백
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "")  // 양방향·제어문자 (□ 원인)
+    .replace(/\*([\(（][^)）]*[\)）])/g, "")                             // *(주석) 형태 편집 주석
+    .replace(/\([\u0591-\u05FF\s,]+\)/g, "")                           // 히브리어 괄호 주석
+    .replace(/\{[^\}]*\}/g, "")                                         // {ס}, {פ} 단락 기호
+    .replace(/&nbsp;/g, " ")                                            // HTML 엔티티
+    .replace(/&[a-zA-Z0-9#]+;/g, "")                                   // 기타 HTML 엔티티
+    .replace(/<[^>]*>/g, "")                                            // HTML 태그
+    .replace(/\s{2,}/g, " ")                                            // 연속 공백
     .trim();
 }
 
