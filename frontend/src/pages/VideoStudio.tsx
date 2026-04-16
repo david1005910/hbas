@@ -196,7 +196,7 @@ export function VideoStudio() {
   }
 
   // 자막 항목 필드 수정
-  function updateSubtitle(index: number, field: "text" | "heText", value: string) {
+  function updateSubtitle(index: number, field: "text" | "heText" | "enText", value: string) {
     setSubtitles((prev) => prev.map((s, i) => i === index ? { ...s, [field]: value } : s));
   }
 
@@ -1379,6 +1379,18 @@ export function VideoStudio() {
                           className="w-full rounded-xl px-3 py-1.5 text-sm text-white/90 resize-none focus:outline-none leading-relaxed border border-white/25 focus:border-white/50 transition-colors" style={{ background: "rgba(255,255,255,0.10)", backdropFilter: "blur(8px)" }}
                           value={sub.text}
                           onChange={(e) => updateSubtitle(i, "text", e.target.value)}
+                        />
+                      </div>
+
+                      {/* 영어 */}
+                      <div>
+                        <label className="block text-xs text-blue-300/60 mb-1">🇺🇸 English</label>
+                        <textarea
+                          rows={2}
+                          className="w-full rounded-xl px-3 py-1.5 text-sm text-blue-100/80 resize-none focus:outline-none leading-relaxed border border-blue-400/20 focus:border-blue-400/50 transition-colors" style={{ background: "rgba(30,80,200,0.10)", backdropFilter: "blur(8px)" }}
+                          value={sub.enText ?? ""}
+                          onChange={(e) => updateSubtitle(i, "enText", e.target.value)}
+                          placeholder="English subtitle"
                         />
                       </div>
                     </div>

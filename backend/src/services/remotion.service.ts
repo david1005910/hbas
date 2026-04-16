@@ -890,10 +890,17 @@ export async function generateEnglishNarrationForRemotionPublic(
 
   // 히브리어 배분
   const episodeHebrew = await fetchEpisodeHebrew(episode as any);
-  let finalTimings = timings;
+  let heTimings = timings;
   if (episodeHebrew) {
-    finalTimings = distributeHebrewToTimings(timings, episodeHebrew, narrationDuration);
+    heTimings = distributeHebrewToTimings(timings, episodeHebrew, narrationDuration);
   }
+
+  // 영어 자막은 enText 필드에, text는 비워서 한국어 자막 편집과 충돌하지 않도록
+  const finalTimings = heTimings.map((t) => ({
+    ...t,
+    enText: t.text,   // 영어 TTS 텍스트 → enText
+    text: "",         // 한국어 자막은 별도 편집 가능하도록 빈 문자열
+  }));
 
   const subtitlesJson = JSON.stringify(finalTimings);
   fs.writeFileSync(path.join(destDir, "subtitles.json"), subtitlesJson, "utf-8");

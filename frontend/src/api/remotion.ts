@@ -9,6 +9,7 @@ export interface WordReplacement {
 export interface SubEntry {
   text: string;      // 한국어 자막
   heText?: string;   // 히브리어 자막
+  enText?: string;   // 영어 자막
   startSec: number;
   endSec: number;
 }
