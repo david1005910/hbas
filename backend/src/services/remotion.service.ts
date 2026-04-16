@@ -873,10 +873,10 @@ export async function distributeKoreanForEpisode(episodeId: string): Promise<Sub
   const totalDuration = existing[existing.length - 1].endSec;
   let updated: SubtitleTiming[];
 
-  // 1순위: BibleVerse 절 기반 배분 (verseRange가 있을 때) — 히브리어 자음 수 비례 타임 경계
+  // 1순위: BibleVerse 절 기반 배분 (verseRange가 있을 때, 한국어 텍스트가 실제로 있을 때만)
   if (episode.verseRange && episode.bibleBookId) {
     const boundaries = await getVerseTimeBoundaries(episode.bibleBookId, episode.verseRange, totalDuration);
-    if (boundaries && boundaries.length > 0) {
+    if (boundaries && boundaries.length > 0 && boundaries.some((b) => b.koreanText)) {
       updated = existing.map((t) => {
         let idx = boundaries.findIndex((b, i) => {
           const isLast = i === boundaries.length - 1;
@@ -891,6 +891,9 @@ export async function distributeKoreanForEpisode(episodeId: string): Promise<Sub
       const currentProps = readProps();
       writeProps({ ...(currentProps ?? { koreanText: "", hebrewText: "" }), subtitlesJson }, readDurationInFrames());
       return updated;
+    }
+    if (boundaries && boundaries.length > 0) {
+      console.log(`[Subtitle] BibleVerse.koreanText 비어있음 (${boundaries.length}절) → SRT_KO/SCRIPT 폴백`);
     }
   }
 
@@ -907,7 +910,16 @@ export async function distributeKoreanForEpisode(episodeId: string): Promise<Sub
       if (allKo) koreanScenes = [allKo];
     }
   }
-  if (!koreanScenes.length) throw new Error("한국어 텍스트를 찾을 수 없습니다. SRT_KO 또는 SCRIPT를 먼저 생성하세요.");
+  // 4순위: koreanText prop (Remotion data.json에 저장된 전체 구절 텍스트)
+  if (!koreanScenes.length) {
+    const currentProps = readProps();
+    if (currentProps?.koreanText) {
+      koreanScenes = [currentProps.koreanText];
+      console.log(`[Subtitle] 폴백: data.json koreanText 사용 (${koreanScenes[0].length}자)`);
+    }
+  }
+
+  if (!koreanScenes.length) throw new Error("한국어 텍스트를 찾을 수 없습니다. SRT_KO, SCRIPT, 또는 koreanText prop이 필요합니다.");
 
   updated = distributeKoreanToTimings(existing, koreanScenes, totalDuration);
   const subtitlesJson = JSON.stringify(updated);
@@ -1062,6 +1074,26 @@ export async function generateNarrationForRemotionPublic(
   if (finalTimings === timings && episodeHebrew) {
     finalTimings = distributeHebrewToTimings(timings, episodeHebrew, narrationDuration);
     console.log(`[Remotion-TTS] 히브리어 자동 배분 (${splitHebrewByLength(episodeHebrew).length}개 라인)`);
+  }
+
+  // 구절 기반 자막에 한국어(text)가 비어 있으면 SRT_KO / SCRIPT / narrationText로 채움
+  const hasKorean = finalTimings.some((t) => t.text && t.text.trim());
+  if (!hasKorean) {
+    let koScenes: string[] = [];
+    const srtKoContent = episode.contents.find((c) => c.contentType === "SRT_KO");
+    if (srtKoContent?.content) koScenes = extractSrtAllScenes(srtKoContent.content);
+    if (!koScenes.length) {
+      const scriptContent = episode.contents.find((c) => c.contentType === "SCRIPT");
+      if (scriptContent?.content) {
+        const allKo = extractAllKoreanNarration(scriptContent.content);
+        if (allKo) koScenes = [allKo];
+      }
+    }
+    if (!koScenes.length && narrationText) koScenes = [narrationText];
+    if (koScenes.length) {
+      finalTimings = distributeKoreanToTimings(finalTimings as SubtitleTiming[], koScenes, narrationDuration) as typeof timings;
+      console.log(`[Remotion-TTS] 한국어 보완 배분 (${koScenes.length}씬)`);
+    }
   }
 
   // 자막 한국어 텍스트에 단어 치환 최종 적용 (경로에 무관하게 보장)
