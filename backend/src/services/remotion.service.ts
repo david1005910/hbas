@@ -910,16 +910,30 @@ export async function distributeKoreanForEpisode(episodeId: string): Promise<Sub
       if (allKo) koreanScenes = [allKo];
     }
   }
-  // 4순위: koreanText prop (Remotion data.json에 저장된 전체 구절 텍스트)
+  // 4순위: 에피소드의 한국어 텍스트를 직접 추출 (SRT_KO 전체 합산 or 제목)
   if (!koreanScenes.length) {
-    const currentProps = readProps();
-    if (currentProps?.koreanText) {
-      koreanScenes = [currentProps.koreanText];
+    // SRT_KO 전체를 하나의 씬으로
+    const srtKoContent = episode.contents.find((c) => c.contentType === "SRT_KO");
+    if (srtKoContent?.content) {
+      const koText = srtSingleText(srtKoContent.content);
+      if (koText) koreanScenes = [koText];
+    }
+  }
+  // 5순위: data.json koreanText (다른 배분 함수가 아직 덮어쓰지 않은 경우에만 유효)
+  if (!koreanScenes.length) {
+    const savedProps = readProps();
+    if (savedProps?.koreanText) {
+      koreanScenes = [savedProps.koreanText];
       console.log(`[Subtitle] 폴백: data.json koreanText 사용 (${koreanScenes[0].length}자)`);
     }
   }
+  // 6순위: 에피소드 제목
+  if (!koreanScenes.length && episode.titleKo) {
+    koreanScenes = [episode.titleKo];
+    console.log(`[Subtitle] 폴백: 에피소드 제목 사용 — "${episode.titleKo}"`);
+  }
 
-  if (!koreanScenes.length) throw new Error("한국어 텍스트를 찾을 수 없습니다. SRT_KO, SCRIPT, 또는 koreanText prop이 필요합니다.");
+  if (!koreanScenes.length) throw new Error("한국어 텍스트를 찾을 수 없습니다. SRT_KO 또는 SCRIPT를 먼저 생성하세요.");
 
   updated = distributeKoreanToTimings(existing, koreanScenes, totalDuration);
   const subtitlesJson = JSON.stringify(updated);
