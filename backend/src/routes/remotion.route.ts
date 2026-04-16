@@ -16,6 +16,7 @@ import {
   getEpisodeSubtitle,
   distributeHebrewForEpisode,
   distributeEnglishForEpisode,
+  distributeKoreanForEpisode,
   extractAllEnglishNarration,
   PROJECT_PATH,
 } from "../services/remotion.service";
@@ -272,6 +273,18 @@ router.post("/subtitles/auto-english", async (req: Request, res: Response) => {
     const { episodeId } = req.body;
     if (!episodeId) return res.status(400).json({ error: "episodeId 필수" });
     const subtitles = await distributeEnglishForEpisode(episodeId);
+    res.json({ subtitles });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/v1/remotion/subtitles/auto-korean — 기존 자막에 한국어(SRT_KO) 자동 배분
+router.post("/subtitles/auto-korean", async (req: Request, res: Response) => {
+  try {
+    const { episodeId } = req.body;
+    if (!episodeId) return res.status(400).json({ error: "episodeId 필수" });
+    const subtitles = await distributeKoreanForEpisode(episodeId);
     res.json({ subtitles });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

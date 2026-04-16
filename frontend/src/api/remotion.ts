@@ -23,6 +23,8 @@ export interface RemotionProps {
   audioFileName?: string;
   episodeId?: string;
   subtitlesJson?: string;
+  showSubtitle?: boolean;
+  showNarration?: boolean;
 }
 
 export interface RenderStatus {
@@ -94,6 +96,10 @@ export const remotionApi = {
   // 기존 자막에 영어(SRT_EN) 자동 배분
   autoFillEnglish: (episodeId: string) =>
     api.post<{ subtitles: SubEntry[] }>("/remotion/subtitles/auto-english", { episodeId }).then((r) => r.data.subtitles),
+
+  // 기존 자막에 한국어(SRT_KO) 자동 배분
+  autoFillKorean: (episodeId: string) =>
+    api.post<{ subtitles: SubEntry[] }>("/remotion/subtitles/auto-korean", { episodeId }).then((r) => r.data.subtitles),
 
   // 단어 치환 규칙 조회
   getWordReplacements: () =>

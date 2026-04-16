@@ -22,6 +22,8 @@ export interface RemotionProps {
   audioFileName?: string;
   episodeId?: string;
   subtitlesJson?: string; // JSON: Array<{text,startSec,endSec}>
+  showSubtitle?: boolean;
+  showNarration?: boolean;
 }
 
 // ─── data.json 읽기/쓰기 ─────────────────────────────────────────────────────
@@ -37,6 +39,8 @@ export function writeProps(props: RemotionProps, durationInFrames?: number): voi
     videoFileName: props.videoFileName ?? "",
     audioFileName: props.audioFileName ?? "narration.mp3",
     subtitlesJson: props.subtitlesJson ?? "",
+    showSubtitle: props.showSubtitle ?? true,
+    showNarration: props.showNarration ?? true,
   };
   fs.writeFileSync(dataPath, JSON.stringify(payload, null, 2), "utf-8");
 
@@ -56,6 +60,8 @@ function updateRootDefaultProps(props: RemotionProps, durationInFrames = 150): v
   const vf = JSON.stringify(props.videoFileName ?? "");
   const af = JSON.stringify(props.audioFileName ?? "narration.mp3");
   const sj = JSON.stringify(props.subtitlesJson ?? "");
+  const showSub = props.showSubtitle !== false;
+  const showNarr = props.showNarration !== false;
 
   const content = `import { Composition } from 'remotion';
 import { HelloWorld, myCompSchema } from './HelloWorld';
@@ -68,6 +74,8 @@ const defaultProps = {
   videoFileName: ${vf},
   audioFileName: ${af},
   subtitlesJson: ${sj},
+  showSubtitle: ${showSub},
+  showNarration: ${showNarr},
 };
 
 export const RemotionRoot: React.FC = () => {
@@ -463,10 +471,9 @@ async function fetchHebrewFromVerseRange(
 
     if (verses.length === 0) return "";
 
-    return verses
-      .map((v) => v.hebrewText.replace(/\u202B/g, "").trim())
-      .filter(Boolean)
-      .join(" ");
+    return cleanHebrewForDisplay(
+      verses.map((v) => v.hebrewText).filter(Boolean).join(" ")
+    );
   } catch {
     return "";
   }
@@ -577,8 +584,7 @@ async function buildVerseSubtitlePairs(
     });
     if (verses.length === 0) return [];
 
-    const cleanHe = (t: string) => t.replace(/\u202B/g, "").trim();
-    const allHe = verses.map((v) => cleanHe(v.hebrewText)).join(" ");
+    const allHe = cleanHebrewForDisplay(verses.map((v) => v.hebrewText).join(" "));
     // 단어 치환 적용 (예: 하나님 → 엘로힘)
     const allKo = applyWordReplacements(verses.map((v) => v.koreanText).join(" "));
 
@@ -647,6 +653,22 @@ export function extractAllKoreanNarration(script: string): string {
     .join(" ");
 }
 
+// ─── 히브리어 텍스트 정리 (Sefaria 편집 주석·단락 기호 제거) ──────────────────
+
+/** Sefaria SRT/API에서 오는 히브리어 텍스트의 편집 주석·특수기호 제거 */
+function cleanHebrewForDisplay(text: string): string {
+  return text
+    .replace(/\u202B/g, "")                      // RTL 마커
+    .replace(/\*([\(（][^)）]*[\)）])/g, "")       // *(주석) 형태 편집 주석
+    .replace(/\([\u0591-\u05FF\s,]+\)/g, "")      // 히브리어 괄호 주석
+    .replace(/\{[^\}]*\}/g, "")                   // {ס}, {פ} 단락 기호
+    .replace(/&nbsp;/g, " ")                      // HTML 엔티티
+    .replace(/&[a-zA-Z]+;/g, "")                  // 기타 HTML 엔티티
+    .replace(/<[^>]*>/g, "")                      // HTML 태그
+    .replace(/\s{2,}/g, " ")                      // 연속 공백
+    .trim();
+}
+
 // ─── 히브리어 텍스트를 타이밍 배열에 배분 ──────────────────────────────────────
 
 function distributeHebrewToTimings(
@@ -670,7 +692,7 @@ async function fetchEpisodeHebrew(
   episode: { contents: { contentType: string; content: string }[]; bibleBookId: number; verseRange: string | null; titleHe: string | null }
 ): Promise<string> {
   const srtHe = episode.contents.find((c) => c.contentType === "SRT_HE");
-  if (srtHe?.content) return srtSingleText(srtHe.content);
+  if (srtHe?.content) return cleanHebrewForDisplay(srtSingleText(srtHe.content));
 
   const scriptContent = episode.contents.find((c) => c.contentType === "SCRIPT");
   if (scriptContent?.content) {
@@ -741,6 +763,61 @@ export async function distributeHebrewForEpisode(episodeId: string): Promise<Sub
   writeProps({ ...(currentProps ?? { koreanText: "", hebrewText: episodeHebrew }), subtitlesJson }, currentDuration);
 
   console.log(`[Subtitle] 히브리어 배분 완료: ${updated.filter((s) => s.heText).length}개 항목`);
+  return updated;
+}
+
+// ─── 기존 자막에 한국어 자동 배분 (SRT_KO → text) ─────────────────────────────
+
+/** 한국어 씬 배열을 타이밍 배열의 text에 순서대로 매핑 */
+function distributeKoreanToTimings(
+  timings: SubtitleTiming[],
+  koreanScenes: string[]
+): SubtitleTiming[] {
+  if (!koreanScenes.length) return timings;
+  return timings.map((t, i) => ({
+    ...t,
+    text: koreanScenes[i] ?? koreanScenes[koreanScenes.length - 1] ?? "",
+  }));
+}
+
+export async function distributeKoreanForEpisode(episodeId: string): Promise<SubtitleTiming[]> {
+  const episode = await prisma.episode.findUnique({
+    where: { id: episodeId },
+    include: { contents: { orderBy: { createdAt: "desc" } } },
+  });
+  if (!episode) throw new Error("Episode not found");
+
+  const subtitlesPath = path.join(PROJECT_PATH, "public", "subtitles.json");
+  if (!fs.existsSync(subtitlesPath)) throw new Error("subtitles.json 파일이 없습니다. 나레이션을 먼저 생성하세요.");
+
+  const existing: SubtitleTiming[] = JSON.parse(fs.readFileSync(subtitlesPath, "utf-8"));
+  if (!Array.isArray(existing) || existing.length === 0) throw new Error("자막 항목이 없습니다.");
+
+  // SRT_KO에서 씬별 추출, 없으면 SCRIPT 나레이션(KO)
+  let koreanScenes: string[] = [];
+  const srtKo = episode.contents.find((c) => c.contentType === "SRT_KO");
+  if (srtKo?.content) {
+    koreanScenes = extractSrtAllScenes(srtKo.content);
+  }
+  if (!koreanScenes.length) {
+    const scriptContent = episode.contents.find((c) => c.contentType === "SCRIPT");
+    if (scriptContent?.content) {
+      const allKo = extractAllKoreanNarration(scriptContent.content);
+      if (allKo) koreanScenes = [allKo];
+    }
+  }
+  if (!koreanScenes.length) throw new Error("한국어 텍스트를 찾을 수 없습니다. SRT_KO 또는 SCRIPT를 먼저 생성하세요.");
+
+  const updated = distributeKoreanToTimings(existing, koreanScenes);
+  const subtitlesJson = JSON.stringify(updated);
+
+  fs.writeFileSync(subtitlesPath, subtitlesJson, "utf-8");
+
+  const currentProps = readProps();
+  const currentDuration = readDurationInFrames();
+  writeProps({ ...(currentProps ?? { koreanText: "", hebrewText: "" }), subtitlesJson }, currentDuration);
+
+  console.log(`[Subtitle] 한국어 배분 완료: ${updated.filter((s) => s.text).length}개 항목 (SRT_KO ${koreanScenes.length}씬)`);
   return updated;
 }
 
@@ -940,7 +1017,7 @@ export async function generateEnglishNarrationForRemotionPublic(
 
   const destDir = path.join(PROJECT_PATH, "public");
   fs.mkdirSync(destDir, { recursive: true });
-  const fileName = "narration_en.mp3";
+  const fileName = "narrationEN.mp3";
   const destPath = path.join(destDir, fileName);
   fs.copyFileSync(storagePath, destPath);
 

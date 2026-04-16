@@ -54,6 +54,9 @@ export function VideoStudio() {
   const [elStatus, setElStatus] = useState<"idle" | "generating" | "done" | "error">("idle");
   const [elError, setElError] = useState("");
   const [elDuration, setElDuration] = useState<number | null>(null);
+  // 자막/나레이션 표시 토글
+  const [showSubtitle, setShowSubtitle] = useState(true);
+  const [showNarration, setShowNarration] = useState(true);
   // Gemini 채팅
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -181,6 +184,17 @@ export function VideoStudio() {
         }
       }
 
+      // text 없는 항목이 있고 에피소드가 선택된 경우 → 한국어 자동 배분 (SRT_KO)
+      const hasNoKoText = loaded.every((s) => !s.text || s.text.trim() === "");
+      if (hasNoKoText && selectedEpisodeId) {
+        try {
+          const filled = await remotionApi.autoFillKorean(selectedEpisodeId);
+          if (filled.length > 0) loaded = filled;
+        } catch {
+          // SRT_KO 없으면 그냥 진행 (에러 무시)
+        }
+      }
+
       setSubtitles(loaded.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
     } catch (err: any) {
       setSubtitleLoadError(err?.response?.data?.error ?? "자막 불러오기 실패");
@@ -198,6 +212,37 @@ export function VideoStudio() {
     } catch (err: any) {
       setSubtitleSaveError(err?.response?.data?.error ?? "영어 배분 실패");
     }
+  }
+
+  // 한국어 자막 자동 배분 (SRT_KO → text)
+  async function handleAutoFillKorean() {
+    if (!selectedEpisodeId) return;
+    try {
+      const filled = await remotionApi.autoFillKorean(selectedEpisodeId);
+      if (filled.length > 0) {
+        setSubtitles(filled.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
+      }
+    } catch (err: any) {
+      setSubtitleSaveError(err?.response?.data?.error ?? "한국어 배분 실패");
+    }
+  }
+
+  // 한국어 자막 30자 분할: 각 entry의 text가 30자 초과면 단어 경계로 자름
+  function handleSplitKoreanTo30() {
+    const MAX = 30;
+    setSubtitles((prev) =>
+      prev.map((s) => {
+        if (!s.text || s.text.length <= MAX) return s;
+        const words = s.text.split(/\s+/).filter(Boolean);
+        let line = "";
+        for (const w of words) {
+          if (!line) { line = w; continue; }
+          if (line.length + 1 + w.length <= MAX) { line += " " + w; }
+          else { line += "\n" + w; }
+        }
+        return { ...s, text: line };
+      })
+    );
   }
 
   // 자막 저장 → Remotion 즉시 반영
@@ -280,6 +325,8 @@ export function VideoStudio() {
         videoFileName: result.fileName,
         audioFileName,
         episodeId: selectedEpisodeId || undefined,
+        showSubtitle,
+        showNarration,
       });
     } catch (err: any) {
       setUploadError(err?.response?.data?.error ?? err.message);
@@ -315,6 +362,8 @@ export function VideoStudio() {
         videoFileName,
         audioFileName: "narration.mp3",
         episodeId: selectedEpisodeId || undefined,
+        showSubtitle,
+        showNarration,
       });
       setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 500);
     } catch (err: any) {
@@ -342,6 +391,8 @@ export function VideoStudio() {
         videoFileName,
         audioFileName: result.fileName,
         episodeId: selectedEpisodeId || undefined,
+        showSubtitle,
+        showNarration,
       });
     } catch (err: any) {
       setAudioUploadError(err?.response?.data?.error ?? err.message);
@@ -388,6 +439,8 @@ export function VideoStudio() {
           videoFileName: result.props.videoFileName ?? videoFileName,
           audioFileName: result.props.audioFileName ?? audioFileName,
           episodeId: selectedEpisodeId || undefined,
+          showSubtitle,
+          showNarration,
         });
         setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 400);
       }
@@ -459,6 +512,8 @@ export function VideoStudio() {
         koreanText, hebrewText, englishText, language: "en",
         videoFileName, audioFileName: result.fileName,
         episodeId: selectedEpisodeId || undefined,
+        showSubtitle,
+        showNarration,
       });
       setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 500);
     } catch (err: any) {
@@ -608,9 +663,20 @@ export function VideoStudio() {
             <h3 className="font-display text-amber-200 text-xs mb-2" style={{ textShadow: "0px 1px 3px rgba(0,0,0,0.30)" }}>나레이션 언어</h3>
             <div className="flex gap-2">
               <button
-                onClick={() => {
+                onClick={async () => {
                   setLanguage("ko");
-                  sendMutation.mutate({ koreanText, hebrewText, englishText, language: "ko", videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined });
+                  // text가 없으면 SRT_KO에서 자동 배분
+                  let subs = subtitles;
+                  if (subtitles.length > 0 && subtitles.every((s) => !s.text || s.text.trim() === "") && selectedEpisodeId) {
+                    try {
+                      const filled = await remotionApi.autoFillKorean(selectedEpisodeId);
+                      if (filled.length > 0) {
+                        subs = filled.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" }));
+                        setSubtitles(subs);
+                      }
+                    } catch { /* SRT_KO 없으면 무시 */ }
+                  }
+                  sendMutation.mutate({ koreanText, hebrewText, englishText, language: "ko", videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration });
                 }}
                 className={`flex-1 py-2 rounded-xl text-xs font-body border transition-all ${language === "ko" ? "border-amber-400/60 text-amber-200" : "border-white/20 text-white/50 hover:text-white/80"}`}
                 style={{ background: language === "ko" ? "rgba(180,120,0,0.28)" : "rgba(255,255,255,0.07)" }}
@@ -631,12 +697,43 @@ export function VideoStudio() {
                       }
                     } catch { /* SRT_EN 없으면 무시 */ }
                   }
-                  sendMutation.mutate({ koreanText, hebrewText, englishText, language: "en", videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined });
+                  sendMutation.mutate({ koreanText, hebrewText, englishText, language: "en", videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration });
                 }}
                 className={`flex-1 py-2 rounded-xl text-xs font-body border transition-all ${language === "en" ? "border-blue-400/60 text-blue-200" : "border-white/20 text-white/50 hover:text-white/80"}`}
                 style={{ background: language === "en" ? "rgba(30,80,200,0.28)" : "rgba(255,255,255,0.07)" }}
               >
                 🇺🇸 English
+              </button>
+            </div>
+          </section>
+
+          {/* 자막/나레이션 표시 토글 */}
+          <section className="rounded-2xl p-3 border border-white/20" style={{ background: "rgba(255,255,255,0.07)", backdropFilter: "blur(10px)" }}>
+            <h3 className="font-display text-white/60 text-xs mb-2">화면 표시 설정</h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  const next = !showSubtitle;
+                  setShowSubtitle(next);
+                  sendMutation.mutate({ koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle: next, showNarration });
+                }}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs border transition-all ${showSubtitle ? "border-emerald-400/50 text-emerald-300" : "border-white/20 text-white/40"}`}
+                style={{ background: showSubtitle ? "rgba(0,180,80,0.18)" : "rgba(255,255,255,0.06)" }}
+              >
+                {showSubtitle ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                자막 {showSubtitle ? "표시" : "숨김"}
+              </button>
+              <button
+                onClick={() => {
+                  const next = !showNarration;
+                  setShowNarration(next);
+                  sendMutation.mutate({ koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration: next });
+                }}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs border transition-all ${showNarration ? "border-emerald-400/50 text-emerald-300" : "border-white/20 text-white/40"}`}
+                style={{ background: showNarration ? "rgba(0,180,80,0.18)" : "rgba(255,255,255,0.06)" }}
+              >
+                {showNarration ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                나레이션 {showNarration ? "켜짐" : "꺼짐"}
               </button>
             </div>
           </section>
@@ -757,6 +854,8 @@ export function VideoStudio() {
                         videoFileName,
                         audioFileName: e.target.value,
                         episodeId: selectedEpisodeId || undefined,
+                        showSubtitle,
+                        showNarration,
                       });
                     }
                   }}
@@ -1114,7 +1213,7 @@ export function VideoStudio() {
           <div className="space-y-2">
             {/* 스튜디오 전송 */}
             <button
-              onClick={() => sendMutation.mutate({ koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined })}
+              onClick={() => sendMutation.mutate({ koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration })}
               disabled={!canSend || sendMutation.isPending}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 disabled:opacity-40 disabled:cursor-not-allowed text-amber-200 border border-amber-300/40 rounded-2xl text-sm font-body transition-all shadow-[0px_4px_24px_rgba(0,0,0,0.20)] hover:shadow-[0px_4px_32px_rgba(180,120,0,0.30)]"
               style={{ background: "rgba(180,120,0,0.22)", backdropFilter: "blur(14px)" }}
@@ -1335,14 +1434,32 @@ export function VideoStudio() {
                     새로고침
                   </button>
                   {selectedEpisodeId && (
-                    <button
-                      onClick={handleAutoFillEnglish}
-                      title="SRT_EN에서 영어 자막 자동 배분"
-                      className="flex items-center gap-1 text-xs text-blue-300/70 hover:text-blue-200 transition-colors px-2 py-1.5 border border-blue-400/20 rounded-lg"
-                      style={{ background: "rgba(30,80,200,0.12)" }}
-                    >
-                      🇺🇸 영어 자동 배분
-                    </button>
+                    <>
+                      <button
+                        onClick={handleAutoFillKorean}
+                        title="SRT_KO에서 한국어 자막 자동 배분"
+                        className="flex items-center gap-1 text-xs text-amber-300/70 hover:text-amber-200 transition-colors px-2 py-1.5 border border-amber-400/20 rounded-lg"
+                        style={{ background: "rgba(180,120,0,0.12)" }}
+                      >
+                        🇰🇷 한국어 자동 배분
+                      </button>
+                      <button
+                        onClick={handleAutoFillEnglish}
+                        title="SRT_EN에서 영어 자막 자동 배분"
+                        className="flex items-center gap-1 text-xs text-blue-300/70 hover:text-blue-200 transition-colors px-2 py-1.5 border border-blue-400/20 rounded-lg"
+                        style={{ background: "rgba(30,80,200,0.12)" }}
+                      >
+                        🇺🇸 영어 자동 배분
+                      </button>
+                      <button
+                        onClick={handleSplitKoreanTo30}
+                        title="한국어 자막을 30자 이내로 자동 분할"
+                        className="flex items-center gap-1 text-xs text-white/50 hover:text-white/80 transition-colors px-2 py-1.5 border border-white/15 rounded-lg"
+                        style={{ background: "rgba(255,255,255,0.06)" }}
+                      >
+                        ✂ 30자 분할
+                      </button>
+                    </>
                   )}
                   <button
                     onClick={handleSaveSubtitles}
