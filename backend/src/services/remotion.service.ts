@@ -670,6 +670,7 @@ export function extractAllKoreanNarration(script: string): string {
 function cleanHebrewForDisplay(text: string): string {
   return text
     .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "")  // 양방향·제어문자 (□ 원인)
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")   // 비표준 유니코드 공백 → 일반 공백 (□ 원인)
     .replace(/\*([\(（][^)）]*[\)）])/g, "")                             // *(주석) 형태 편집 주석
     .replace(/\([\u0591-\u05FF\s,]+\)/g, "")                           // 히브리어 괄호 주석
     .replace(/\{[^\}]*\}/g, "")                                         // {ס}, {פ} 단락 기호
