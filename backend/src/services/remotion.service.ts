@@ -669,6 +669,7 @@ export function extractAllKoreanNarration(script: string): string {
 /** Sefaria SRT/API에서 오는 히브리어 텍스트의 편집 주석·특수기호·유니코드 제어문자 제거 */
 function cleanHebrewForDisplay(text: string): string {
   return text
+    .replace(/[\u0591-\u05AF]/g, "")                                   // 칸틸레이션 마크 (트로프/악센트) — 폰트 미지원 □ 원인
     .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, "")  // 양방향·제어문자 (□ 원인)
     .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ")   // 비표준 유니코드 공백 → 일반 공백 (□ 원인)
     .replace(/\*([\(（][^)）]*[\)）])/g, "")                             // *(주석) 형태 편집 주석
