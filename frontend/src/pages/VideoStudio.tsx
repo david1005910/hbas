@@ -72,6 +72,9 @@ export function VideoStudio() {
   // 씬 선택
   const [selectedSceneNumber, setSelectedSceneNumber] = useState<number | null>(null);
   const [sceneLoading, setSceneLoading] = useState(false);
+  // 자막 편집기 뷰 모드
+  const [subtitleViewMode, setSubtitleViewMode] = useState<"entries" | "scenes">("entries");
+  const [jumpToScene, setJumpToScene] = useState<number>(1);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -206,6 +209,19 @@ export function VideoStudio() {
       setSubtitles(loaded.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
     } catch (err: any) {
       setSubtitleLoadError(err?.response?.data?.error ?? "자막 불러오기 실패");
+    }
+  }
+
+  // 히브리어 자막 자동 배분 (SRT_HE → heText, sub-phrase 분할)
+  async function handleAutoFillHebrew() {
+    if (!selectedEpisodeId) return;
+    try {
+      const filled = await remotionApi.autoFillHebrew(selectedEpisodeId);
+      if (filled.length > 0) {
+        setSubtitles(filled.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
+      }
+    } catch (err: any) {
+      setSubtitleSaveError(err?.response?.data?.error ?? "히브리어 배분 실패");
     }
   }
 
@@ -595,28 +611,31 @@ export function VideoStudio() {
     }
   }
 
-  // 자막 씬 인덱스 계산 (heText 변화 기준 → 같은 씬은 같은 heText)
+  // 자막 씬 인덱스 계산 — 백엔드와 동일한 균등 시간 분할 방식
+  // segDur = totalDuration / N, sceneIdx = floor(startSec / segDur)
   const subtitleSceneAssignments = useMemo(() => {
     if (subtitles.length === 0) return [] as number[];
-    const hasHe = subtitles.some((s) => s.heText && s.heText.trim());
-    if (hasHe) {
-      let scene = 1;
-      let prevHe = "";
-      return subtitles.map((sub) => {
-        if (sub.heText && sub.heText.trim() && sub.heText !== prevHe) {
-          if (prevHe !== "") scene++;
-          prevHe = sub.heText;
-        }
-        return scene;
-      });
-    }
-    // heText 없으면 총 시간을 기반으로 동일 분할
-    const total = subtitles[subtitles.length - 1]?.endSec ?? 1;
     const ep = episodes?.find((e) => e.id === selectedEpisodeId);
-    const N = ep?.sceneCount ?? 5;
+    const N = Math.max(1, ep?.sceneCount ?? 5);
+    const total = subtitles[subtitles.length - 1]?.endSec ?? 1;
     const segDur = total / N;
     return subtitles.map((sub) => Math.min(Math.floor(sub.startSec / segDur) + 1, N));
   }, [subtitles, episodes, selectedEpisodeId]);
+
+  // 씬별 자막 항목 그룹화 (씬 뷰 탭용)
+  const subtitlesByScene = useMemo(() => {
+    const ep = episodes?.find((e) => e.id === selectedEpisodeId);
+    const N = Math.max(1, ep?.sceneCount ?? 5);
+    const groups: Array<{ sceneNum: number; indices: number[] }> = Array.from({ length: N }, (_, i) => ({
+      sceneNum: i + 1,
+      indices: [],
+    }));
+    subtitleSceneAssignments.forEach((sceneNum, idx) => {
+      const g = groups[sceneNum - 1];
+      if (g) g.indices.push(idx);
+    });
+    return groups;
+  }, [subtitleSceneAssignments, episodes, selectedEpisodeId]);
 
   // 스튜디오로 전송
   const sendMutation = useMutation({
@@ -1606,7 +1625,49 @@ export function VideoStudio() {
                 <span className="text-white/35 text-xs">|</span>
                 <span className="text-sm font-display text-amber-200" style={{ textShadow: "0px 1px 3px rgba(0,0,0,0.30)" }}>자막 편집</span>
                 <span className="text-xs text-white/45">{subtitles.length}개 항목</span>
+
+                {/* 뷰 모드 탭 */}
+                <div className="flex rounded-lg overflow-hidden border border-white/20 ml-2">
+                  {(["entries", "scenes"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setSubtitleViewMode(mode)}
+                      className={`px-2.5 py-1 text-xs transition-colors ${subtitleViewMode === mode ? "text-amber-200 font-semibold" : "text-white/45 hover:text-white/70"}`}
+                      style={{ background: subtitleViewMode === mode ? "rgba(180,120,0,0.30)" : "rgba(255,255,255,0.05)" }}
+                    >
+                      {mode === "entries" ? "타이밍 목록" : "씬 보기"}
+                    </button>
+                  ))}
+                </div>
+
                 <div className="ml-auto flex items-center gap-2">
+                  {/* 씬 이동 (타이밍 목록 모드에서만) */}
+                  {subtitleViewMode === "entries" && subtitles.length > 0 && (() => {
+                    const ep = episodes?.find((e) => e.id === selectedEpisodeId);
+                    const N = ep?.sceneCount ?? 5;
+                    return (
+                      <select
+                        value={jumpToScene}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          setJumpToScene(n);
+                          // 해당 씬의 첫 번째 자막 항목으로 스크롤
+                          const idx = subtitleSceneAssignments.findIndex((s) => s === n);
+                          if (idx >= 0) {
+                            document.getElementById(`subtitle-entry-${idx}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                          }
+                        }}
+                        className="rounded-lg px-2 py-1 text-xs text-white/80 border border-white/20 focus:outline-none"
+                        style={{ background: "rgba(255,255,255,0.08)" }}
+                        title="씬으로 이동"
+                      >
+                        {Array.from({ length: N }, (_, i) => i + 1).map((n) => (
+                          <option key={n} value={n}>씬 {n}</option>
+                        ))}
+                      </select>
+                    );
+                  })()}
+
                   <button
                     onClick={handleLoadSubtitles}
                     title="서버에서 다시 불러오기"
@@ -1617,6 +1678,14 @@ export function VideoStudio() {
                   </button>
                   {selectedEpisodeId && (
                     <>
+                      <button
+                        onClick={handleAutoFillHebrew}
+                        title="SRT_HE에서 히브리어 자막 자동 배분"
+                        className="flex items-center gap-1 text-xs text-amber-400/70 hover:text-amber-300 transition-colors px-2 py-1.5 border border-amber-500/20 rounded-lg"
+                        style={{ background: "rgba(120,80,0,0.15)" }}
+                      >
+                        🔤 히브리어 자동 배분
+                      </button>
                       <button
                         onClick={handleAutoFillKorean}
                         title="SRT_KO에서 한국어 자막 자동 배분"
@@ -1684,13 +1753,136 @@ export function VideoStudio() {
                   </button>
                   {subtitleLoadError && <p className="text-xs text-red-400">{subtitleLoadError}</p>}
                 </div>
+
+              ) : subtitleViewMode === "scenes" ? (
+                /* ── 씬 보기 ────────────────────────────────────────────────── */
+                <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                  {subtitlesByScene.map(({ sceneNum, indices }) => {
+                    const sceneEntries = indices.map((idx) => subtitles[idx]);
+                    const allHe = sceneEntries.map((s) => s.heText ?? "").filter(Boolean).join(" ");
+                    const allKo = sceneEntries.map((s) => s.text).filter(Boolean).join(" ");
+                    const allEn = sceneEntries.map((s) => s.enText ?? "").filter(Boolean).join(" ");
+                    const timeStart = sceneEntries[0]?.startSec ?? 0;
+                    const timeEnd = sceneEntries[sceneEntries.length - 1]?.endSec ?? 0;
+                    return (
+                      <div
+                        key={sceneNum}
+                        className="rounded-2xl border border-amber-400/25 overflow-hidden"
+                        style={{ background: "rgba(180,120,0,0.08)", backdropFilter: "blur(10px)" }}
+                      >
+                        {/* 씬 헤더 */}
+                        <div
+                          className="flex items-center gap-3 px-4 py-2 border-b border-amber-400/20"
+                          style={{ background: "rgba(180,120,0,0.20)" }}
+                        >
+                          <span className="text-amber-200 font-body font-bold text-sm">씬 {sceneNum}</span>
+                          <span className="text-white/35 text-xs font-mono">
+                            {formatSec(timeStart)} → {formatSec(timeEnd)}
+                          </span>
+                          <span className="text-white/30 text-xs">{indices.length}개 항목</span>
+                        </div>
+
+                        {/* 씬 내 3언어 전체 텍스트 */}
+                        <div className="p-3 grid grid-cols-3 gap-3">
+                          {/* 히브리어 전체 */}
+                          <div className="space-y-1">
+                            <label className="block text-xs text-amber-400/60 font-body">🔤 히브리어</label>
+                            <div
+                              className="text-sm text-amber-200/90 font-mono p-2 rounded-lg min-h-[60px] leading-relaxed border border-amber-400/15"
+                              dir="rtl"
+                              style={{ background: "rgba(180,120,0,0.10)" }}
+                            >
+                              {allHe || <span className="text-white/25 italic text-xs">없음</span>}
+                            </div>
+                          </div>
+                          {/* 한국어 전체 */}
+                          <div className="space-y-1">
+                            <label className="block text-xs text-white/50 font-body">🇰🇷 한국어</label>
+                            <div
+                              className="text-sm text-white/85 p-2 rounded-lg min-h-[60px] leading-relaxed border border-white/15"
+                              style={{ background: "rgba(255,255,255,0.06)" }}
+                            >
+                              {allKo || <span className="text-white/25 italic text-xs">없음</span>}
+                            </div>
+                          </div>
+                          {/* 영어 전체 */}
+                          <div className="space-y-1">
+                            <label className="block text-xs text-blue-300/50 font-body">🇺🇸 English</label>
+                            <div
+                              className="text-sm text-blue-100/75 p-2 rounded-lg min-h-[60px] leading-relaxed border border-blue-400/15"
+                              style={{ background: "rgba(30,80,200,0.08)" }}
+                            >
+                              {allEn || <span className="text-white/25 italic text-xs">없음</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 타이밍 항목 테이블 */}
+                        {indices.length > 0 && (
+                          <div className="px-3 pb-3 space-y-1">
+                            <div className="text-xs text-white/30 mb-1 flex items-center gap-1">
+                              <Clock size={10} /> 타이밍 항목
+                            </div>
+                            {indices.map((idx) => {
+                              const sub = subtitles[idx];
+                              return (
+                                <div
+                                  key={idx}
+                                  id={`subtitle-entry-${idx}`}
+                                  className="rounded-xl p-2.5 space-y-1.5 border border-white/10"
+                                  style={{ background: "rgba(255,255,255,0.05)" }}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-mono text-white/30">#{idx + 1}</span>
+                                    <span className="text-xs font-mono text-white/25">
+                                      {formatSec(sub.startSec)} → {formatSec(sub.endSec)}
+                                      <span className="ml-1 text-white/20">({(sub.endSec - sub.startSec).toFixed(1)}s)</span>
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <textarea
+                                      rows={1} dir="rtl"
+                                      className="w-full rounded-lg px-2 py-1 text-xs text-amber-200 resize-none focus:outline-none font-mono border border-amber-400/15 focus:border-amber-300/40 transition-colors"
+                                      style={{ background: "rgba(180,120,0,0.08)" }}
+                                      value={sub.heText ?? ""}
+                                      onChange={(e) => updateSubtitle(idx, "heText", e.target.value)}
+                                      placeholder="히브리어"
+                                    />
+                                    <textarea
+                                      rows={1}
+                                      className="w-full rounded-lg px-2 py-1 text-xs text-white/85 resize-none focus:outline-none border border-white/15 focus:border-white/35 transition-colors"
+                                      style={{ background: "rgba(255,255,255,0.06)" }}
+                                      value={sub.text}
+                                      onChange={(e) => updateSubtitle(idx, "text", e.target.value)}
+                                      placeholder="한국어"
+                                    />
+                                    <textarea
+                                      rows={1}
+                                      className="w-full rounded-lg px-2 py-1 text-xs text-blue-100/70 resize-none focus:outline-none border border-blue-400/15 focus:border-blue-400/35 transition-colors"
+                                      style={{ background: "rgba(30,80,200,0.06)" }}
+                                      value={sub.enText ?? ""}
+                                      onChange={(e) => updateSubtitle(idx, "enText", e.target.value)}
+                                      placeholder="English"
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
               ) : (
+                /* ── 타이밍 목록 보기 ───────────────────────────────────────── */
                 <div className="flex-1 overflow-y-auto space-y-1 pr-1">
                   {subtitles.map((sub, i) => {
                     const sceneNum = subtitleSceneAssignments[i] ?? 1;
                     const isNewScene = i === 0 || (subtitleSceneAssignments[i] !== subtitleSceneAssignments[i - 1]);
                     return (
-                      <div key={i}>
+                      <div key={i} id={`subtitle-entry-${i}`}>
                         {/* 씬 구분 헤더 */}
                         {isNewScene && (
                           <div
@@ -1698,11 +1890,9 @@ export function VideoStudio() {
                             style={{ background: "rgba(180,120,0,0.28)", backdropFilter: "blur(8px)" }}
                           >
                             <span className="text-amber-200 text-xs font-body font-bold">씬 {sceneNum}</span>
-                            {sub.heText && (
-                              <span className="text-amber-300/60 text-xs font-mono truncate max-w-[200px]" dir="rtl">
-                                {sub.heText.slice(0, 40)}{sub.heText.length > 40 ? "…" : ""}
-                              </span>
-                            )}
+                            <span className="text-white/30 text-xs">
+                              {subtitlesByScene[sceneNum - 1]?.indices.length ?? 0}개 항목
+                            </span>
                           </div>
                         )}
                         <div
