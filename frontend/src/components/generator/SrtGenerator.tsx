@@ -36,7 +36,7 @@ function parseSrt(srtContent: string): Array<{ num: number; time: string; text: 
 /** 편집된 씬 텍스트 배열 + 원본 타임코드를 합쳐 SRT 문자열 재생성 */
 function rebuildSrt(scenes: Array<{ num: number; time: string }>, editedTexts: string[]): string {
   return scenes
-    .map((s, i) => `${s.num}\n${s.time}\n${editedTexts[i] ?? s.time}`)
+    .map((s, i) => `${s.num}\n${s.time}\n${editedTexts[i] ?? s.text}`)
     .join("\n\n") + "\n";
 }
 
