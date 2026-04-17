@@ -30,6 +30,7 @@ export function VideoStudio() {
   const [narrationStatus, setNarrationStatus] = useState<"idle" | "generating" | "done" | "error">("idle");
   const [narrationError, setNarrationError] = useState("");
   const [narrationDuration, setNarrationDuration] = useState<number | null>(null);
+  const [narrationSpeed, setNarrationSpeed] = useState<number>(1.0);
   const [enNarrationStatus, setEnNarrationStatus] = useState<"idle" | "generating" | "done" | "error">("idle");
   const [enNarrationError, setEnNarrationError] = useState("");
   const [enNarrationDuration, setEnNarrationDuration] = useState<number | null>(null);
@@ -143,19 +144,25 @@ export function VideoStudio() {
     setNarrationStatus("generating");
     setNarrationError("");
     try {
-      const result = await remotionApi.generateNarration(epId);
+      const result = await remotionApi.generateNarration(epId, narrationSpeed !== 1.0 ? narrationSpeed : undefined);
       setAudioFileName(result.fileName);
       if (result.durationSec) setNarrationDuration(result.durationSec);
       // 생성된 자막 파싱 → 편집기에 로드
       if (result.subtitlesJson) {
         try {
           const parsed = JSON.parse(result.subtitlesJson) as SubEntry[];
-          setSubtitles(parsed.map((s) => ({ ...s, heText: s.heText ?? "" })));
+          setSubtitles(parsed.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
         } catch {}
       }
       setNarrationStatus("done");
       refetchAudios();
-      // Remotion 미리보기 갱신
+      // Remotion Studio 반영 (오디오 파일 + 자막 갱신)
+      sendMutation.mutate({
+        koreanText, hebrewText, englishText, language,
+        videoFileName, audioFileName: result.fileName ?? "narration.mp3",
+        episodeId: selectedEpisodeId || undefined,
+        showSubtitle, showNarration,
+      });
       setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 500);
     } catch (err: any) {
       setNarrationError(err?.response?.data?.error ?? err.message);
@@ -551,13 +558,13 @@ export function VideoStudio() {
     setEnNarrationStatus("generating");
     setEnNarrationError("");
     try {
-      const result = await remotionApi.generateEnglishNarration(selectedEpisodeId);
+      const result = await remotionApi.generateEnglishNarration(selectedEpisodeId, narrationSpeed !== 1.0 ? narrationSpeed : undefined);
       setAudioFileName(result.fileName);
       if (result.durationSec) setEnNarrationDuration(result.durationSec);
       if (result.subtitlesJson) {
         try {
           const parsed = JSON.parse(result.subtitlesJson) as SubEntry[];
-          setSubtitles(parsed.map((s) => ({ ...s, heText: s.heText ?? "" })));
+          setSubtitles(parsed.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
         } catch {}
       }
       setEnNarrationStatus("done");
@@ -1014,6 +1021,23 @@ export function VideoStudio() {
                 value={audioFileName}
                 onChange={(e) => setAudioFileName(e.target.value)}
               />
+              {/* 나레이션 속도 선택 */}
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs text-white/60 whitespace-nowrap">속도</span>
+                <div className="flex gap-1 flex-wrap">
+                  {[0.85, 1.0, 1.2, 1.5].map((rate) => (
+                    <button
+                      key={rate}
+                      onClick={() => setNarrationSpeed(rate)}
+                      className={`px-2 py-0.5 rounded-lg text-xs border transition-all ${narrationSpeed === rate ? "border-amber-400/70 text-amber-200" : "border-white/20 text-white/50 hover:text-white/80"}`}
+                      style={{ background: narrationSpeed === rate ? "rgba(180,120,0,0.28)" : "rgba(255,255,255,0.07)" }}
+                    >
+                      {rate}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* 나레이션 TTS 생성 버튼 — 언어별 분기 */}
               {language === "ko" ? (
                 <>

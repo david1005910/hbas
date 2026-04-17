@@ -76,15 +76,15 @@ export const remotionApi = {
     ).then((r) => r.data),
 
   // 한국어 나레이션 TTS 생성 → public/narration.mp3
-  generateNarration: (episodeId: string) =>
+  generateNarration: (episodeId: string, speakingRate?: number) =>
     api.post<{ success: boolean; fileName: string; textLength: number; durationSec?: number; durationInFrames?: number; subtitlesJson?: string }>(
-      "/remotion/generate-narration", { episodeId }
+      "/remotion/generate-narration", { episodeId, speakingRate }
     ).then((r) => r.data),
 
   // 영어 나레이션 TTS 생성 → public/narration_en.mp3
-  generateEnglishNarration: (episodeId: string) =>
+  generateEnglishNarration: (episodeId: string, speakingRate?: number) =>
     api.post<{ success: boolean; fileName: string; textLength: number; durationSec?: number; durationInFrames?: number; subtitlesJson?: string }>(
-      "/remotion/generate-narration-en", { episodeId }
+      "/remotion/generate-narration-en", { episodeId, speakingRate }
     ).then((r) => r.data),
 
   // 현재 자막 목록 조회

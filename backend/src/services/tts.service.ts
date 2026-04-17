@@ -133,13 +133,17 @@ function cleanNarrationText(text: string): string {
  * Google TTS API 단건 호출 → MP3 Buffer 반환
  * Chirp3-HD는 SSML 미지원 → plain text 사용
  */
-async function callTtsApi(text: string, token: string, lang: "ko" | "en" = "ko"): Promise<Buffer> {
+async function callTtsApi(text: string, token: string, lang: "ko" | "en" = "ko", speakingRate?: number): Promise<Buffer> {
+  const baseConfig = lang === "en" ? NARRATION_AUDIO_CONFIG_EN : NARRATION_AUDIO_CONFIG;
+  const audioConfig = speakingRate !== undefined
+    ? { ...baseConfig, speakingRate }
+    : baseConfig;
   const response = await axios.post(
     TTS_ENDPOINT,
     {
       input: { text },
       voice: lang === "en" ? NARRATION_VOICE_EN : NARRATION_VOICE_KO,
-      audioConfig: lang === "en" ? NARRATION_AUDIO_CONFIG_EN : NARRATION_AUDIO_CONFIG,
+      audioConfig,
     },
     { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
   );
@@ -164,7 +168,8 @@ export interface NarrationResult {
 export async function generateNarration(
   episodeId: string,
   inputText: string,
-  language: "ko" | "en" = "ko"
+  language: "ko" | "en" = "ko",
+  speakingRate?: number
 ): Promise<NarrationResult> {
   const token = await getGcpAccessToken();
 
@@ -211,7 +216,7 @@ export async function generateNarration(
       if (!seg) continue;
 
       console.log(`[TTS] 분절 ${i + 1}/${rawSegments.length}: "${seg.slice(0, 40)}"`);
-      const buf = await callTtsApi(seg, token, language);
+      const buf = await callTtsApi(seg, token, language, speakingRate);
       const segPath = path.join(os.tmpdir(), `narr_seg_${ts}_${i}.mp3`);
       fs.writeFileSync(segPath, buf);
       tempFiles.push(segPath);

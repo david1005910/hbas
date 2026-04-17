@@ -181,9 +181,10 @@ router.post("/upload-audio", audioUpload.single("audio"), (req: Request, res: Re
 // POST /api/v1/remotion/generate-narration — 한국어 나레이션 TTS 생성 → public/narration.mp3
 router.post("/generate-narration", async (req: Request, res: Response) => {
   try {
-    const { episodeId } = req.body;
+    const { episodeId, speakingRate } = req.body;
     if (!episodeId) return res.status(400).json({ error: "episodeId 필수" });
-    const result = await generateNarrationForRemotionPublic(episodeId);
+    const rate = speakingRate !== undefined ? Number(speakingRate) : undefined;
+    const result = await generateNarrationForRemotionPublic(episodeId, rate);
     res.json({ success: true, ...result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -193,9 +194,10 @@ router.post("/generate-narration", async (req: Request, res: Response) => {
 // POST /api/v1/remotion/generate-narration-en — 영어 나레이션 TTS 생성 → public/narration_en.mp3
 router.post("/generate-narration-en", async (req: Request, res: Response) => {
   try {
-    const { episodeId } = req.body;
+    const { episodeId, speakingRate } = req.body;
     if (!episodeId) return res.status(400).json({ error: "episodeId 필수" });
-    const result = await generateEnglishNarrationForRemotionPublic(episodeId);
+    const rate = speakingRate !== undefined ? Number(speakingRate) : undefined;
+    const result = await generateEnglishNarrationForRemotionPublic(episodeId, rate);
     res.json({ success: true, ...result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

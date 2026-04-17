@@ -1174,7 +1174,8 @@ export async function distributeEnglishForEpisode(episodeId: string): Promise<Su
 // ─── 에피소드 한국어 나레이션 생성 → Remotion public/ 에 저장 ─────────────────
 
 export async function generateNarrationForRemotionPublic(
-  episodeId: string
+  episodeId: string,
+  speakingRate?: number
 ): Promise<{ fileName: string; textLength: number; durationSec?: number; durationInFrames?: number; subtitlesJson?: string }> {
   const episode = await prisma.episode.findUnique({
     where: { id: episodeId },
@@ -1225,7 +1226,7 @@ export async function generateNarrationForRemotionPublic(
   console.log(`[Remotion-TTS] 나레이션 텍스트 준비 완료 (${narrationText.length}자): "${narrationText.slice(0, 80)}..."`);
 
   // TTS 생성 → storage에 저장 (분절별 타이밍 데이터 포함)
-  const { filePath: storagePath, timings } = await generateNarration(episodeId, narrationText);
+  const { filePath: storagePath, timings } = await generateNarration(episodeId, narrationText, "ko", speakingRate);
 
   // Remotion public/ 에 복사
   const destDir = path.join(PROJECT_PATH, "public");
@@ -1330,6 +1331,23 @@ export async function generateNarrationForRemotionPublic(
     }
   }
 
+  // ── SRT_EN 있으면 씬 기반 영어 자막 자동 배분 (enText) ──────────────────────────
+  const srtEnForNarr = episode.contents.find((c) => c.contentType === "SRT_EN");
+  if (srtEnForNarr?.content) {
+    const enNarrScenes = extractSrtAllScenes(srtEnForNarr.content);
+    if (enNarrScenes.length > 0) {
+      const EN = enNarrScenes.length;
+      const enNarrSegDur = narrationDuration / EN;
+
+      finalTimings = finalTimings.map((t) => {
+        const sIdx = enNarrSegDur > 0 ? Math.min(Math.floor(t.startSec / enNarrSegDur), EN - 1) : 0;
+        return { ...t, enText: enNarrScenes[sIdx] ?? "" };
+      }) as typeof timings;
+
+      console.log(`[Remotion-TTS] SRT_EN 씬 기반 영어 자막 자동 배분 완료 (${EN}씬)`);
+    }
+  }
+
   // subtitlesJson: 자막 타이밍 JSON → Remotion props에 전달
   const subtitlesJson = JSON.stringify(finalTimings);
 
@@ -1359,7 +1377,8 @@ export async function generateNarrationForRemotionPublic(
 // ─── 에피소드 영어 나레이션 생성 → Remotion public/ 에 저장 ──────────────────
 
 export async function generateEnglishNarrationForRemotionPublic(
-  episodeId: string
+  episodeId: string,
+  speakingRate?: number
 ): Promise<{ fileName: string; textLength: number; durationSec: number; durationInFrames: number; subtitlesJson?: string }> {
   const episode = await prisma.episode.findUnique({
     where: { id: episodeId },
@@ -1389,7 +1408,7 @@ export async function generateEnglishNarrationForRemotionPublic(
   }
 
   // Google TTS 영어 생성
-  const { filePath: storagePath, timings } = await generateNarration(episodeId, narrationText, "en");
+  const { filePath: storagePath, timings } = await generateNarration(episodeId, narrationText, "en", speakingRate);
 
   const destDir = path.join(PROJECT_PATH, "public");
   fs.mkdirSync(destDir, { recursive: true });
@@ -1448,6 +1467,25 @@ export async function generateEnglishNarrationForRemotionPublic(
       }) as typeof timings;
 
       console.log(`[Remotion-TTS-EN] SRT_HE 씬 기반 히브리어 재배분 완료 (${HN}씬)`);
+    }
+  }
+
+  // ── SRT_KO 있으면 씬 기반 한국어 자막 자동 배분 (text) ──────────────────────────
+  // 영어 TTS 타이밍 항목의 text는 비어 있으므로 SRT_KO로 채움
+  const srtKoForEn = episode.contents.find((c) => c.contentType === "SRT_KO");
+  if (srtKoForEn?.content) {
+    const koEnScenes = extractSrtAllScenes(srtKoForEn.content);
+    if (koEnScenes.length > 0) {
+      const KN = koEnScenes.length;
+      const koEnSegDur = narrationDuration / KN;
+
+      finalTimings = finalTimings.map((t) => {
+        if (t.text && t.text.trim()) return t; // 이미 한국어 있으면 보존
+        const sIdx = koEnSegDur > 0 ? Math.min(Math.floor(t.startSec / koEnSegDur), KN - 1) : 0;
+        return { ...t, text: applyWordReplacements(koEnScenes[sIdx] ?? "") };
+      }) as typeof timings;
+
+      console.log(`[Remotion-TTS-EN] SRT_KO 씬 기반 한국어 자막 자동 배분 완료 (${KN}씬)`);
     }
   }
 
