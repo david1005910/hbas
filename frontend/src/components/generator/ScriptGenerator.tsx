@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { Wand2, Pencil, Save, X, CheckCircle2 } from "lucide-react";
+import { Wand2, Pencil, Save, X, CheckCircle2, Lightbulb } from "lucide-react";
 import { streamGenerate } from "../../api/generate";
+import { episodesApi } from "../../api/episodes";
 import { StreamingOutput } from "../ui/StreamingOutput";
 import { DownloadButton } from "../ui/DownloadButton";
 import { api } from "../../api/client";
@@ -9,12 +10,36 @@ import type { GeneratedContent } from "../../types";
 interface Props {
   episodeId: string;
   existing?: GeneratedContent;
+  sceneCount?: number;
+  verseRange?: string;
   onDone?: () => void;
+}
+
+/** 구절 범위 문자열에서 절 수 추산 */
+function estimateVerseCount(verseRange?: string): number {
+  if (!verseRange) return 0;
+  const chapterVerse = verseRange.match(/^(\d+):(\d+)\s*[-–]\s*(\d+):(\d+)$/);
+  if (chapterVerse) {
+    const [, startCh, , endCh, endV] = chapterVerse.map(Number);
+    return (endCh - startCh) * 30 + endV;
+  }
+  const simpleRange = verseRange.match(/^(\d+)\s*[-–]\s*(\d+)$/);
+  if (simpleRange) return Number(simpleRange[2]) - Number(simpleRange[1]) + 1;
+  return 0;
+}
+
+function recommendScenes(verseCount: number, current: number): number {
+  if (verseCount <= 0) return current;
+  if (verseCount <= 3) return verseCount;
+  if (verseCount <= 7) return Math.ceil(verseCount * 0.8);
+  if (verseCount <= 15) return Math.ceil(verseCount * 0.6);
+  if (verseCount <= 31) return Math.max(8, Math.ceil(verseCount * 0.45));
+  return Math.max(10, Math.ceil(verseCount * 0.35));
 }
 
 type Mode = "view" | "edit";
 
-export function ScriptGenerator({ episodeId, existing, onDone }: Props) {
+export function ScriptGenerator({ episodeId, existing, sceneCount: initialSceneCount = 5, verseRange, onDone }: Props) {
   const [content, setContent] = useState(existing?.content ?? "");
   const [editContent, setEditContent] = useState("");
   const [mode, setMode] = useState<Mode>("view");
@@ -23,6 +48,12 @@ export function ScriptGenerator({ episodeId, existing, onDone }: Props) {
   const [saveError, setSaveError] = useState("");
   const [savedOk, setSavedOk] = useState(false);
   const [streamError, setStreamError] = useState("");
+  const [sceneCount, setSceneCount] = useState(initialSceneCount);
+
+  useEffect(() => { setSceneCount(initialSceneCount); }, [initialSceneCount]);
+
+  const verseCount = estimateVerseCount(verseRange);
+  const recommended = recommendScenes(verseCount, sceneCount);
 
   // existing이 바뀌면(부모 새로고침) content 동기화
   useEffect(() => {
@@ -31,21 +62,24 @@ export function ScriptGenerator({ episodeId, existing, onDone }: Props) {
     }
   }, [existing?.content]);
 
-  function handleGenerate() {
+  async function handleGenerate() {
+    // 씬 수가 바뀌었으면 먼저 에피소드에 저장
+    if (sceneCount !== initialSceneCount) {
+      try { await episodesApi.update(episodeId, { sceneCount }); } catch {}
+    }
     setContent("");
     setStreamError("");
     setSaveError("");
     setSavedOk(false);
     setMode("view");
     setIsStreaming(true);
-    const stop = streamGenerate(
+    streamGenerate(
       episodeId,
       "script",
       (chunk) => setContent((prev) => prev + chunk),
       () => { setIsStreaming(false); onDone?.(); },
       (msg) => { setStreamError(msg); setIsStreaming(false); }
     );
-    return stop;
   }
 
   function handleEditStart() {
@@ -86,12 +120,38 @@ export function ScriptGenerator({ episodeId, existing, onDone }: Props) {
   return (
     <div className="space-y-4">
       {/* 헤더 */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h3 className="text-parchment font-body font-semibold">한국어·히브리어 대본</h3>
           <p className="text-parchment/50 text-xs font-body mt-0.5">
             Gemini 2.5 Flash로 씬별 이중 언어 대본 생성
           </p>
+        </div>
+
+        {/* 씬 수 선택 + 추천 */}
+        <div className="flex items-center gap-2">
+          <span className="text-parchment/60 text-sm font-body">씬 수:</span>
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={sceneCount}
+            onChange={(e) => setSceneCount(Math.max(1, Math.min(50, Number(e.target.value))))}
+            className="w-16 text-center rounded-lg px-2 py-1 text-sm text-parchment bg-ink border border-gold/30 focus:outline-none focus:border-gold/60"
+          />
+          {verseCount > 0 && recommended !== sceneCount && (
+            <button
+              onClick={() => setSceneCount(recommended)}
+              title={`절 수(${verseCount}절) 기반 추천: ${recommended}개 씬`}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-amber-300 border border-amber-400/30 rounded-lg hover:bg-amber-400/10 transition-colors"
+            >
+              <Lightbulb size={12} />
+              추천 {recommended}개
+            </button>
+          )}
+          {verseCount > 0 && (
+            <span className="text-parchment/35 text-xs font-body">({verseCount}절)</span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

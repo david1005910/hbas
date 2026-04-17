@@ -165,6 +165,8 @@ export function EpisodeDetail() {
           <ScriptGenerator
             episodeId={id!}
             existing={getContent("SCRIPT")}
+            sceneCount={episode.sceneCount}
+            verseRange={episode.verseRange}
             onDone={refresh}
           />
         )}
@@ -202,6 +204,8 @@ export function EpisodeDetail() {
           <SrtGenerator
             episodeId={id!}
             existing={getSrtContents()}
+            sceneCount={episode.sceneCount}
+            verseRange={episode.verseRange}
             onDone={refresh}
           />
         )}

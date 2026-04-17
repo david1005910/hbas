@@ -149,8 +149,10 @@ async function callTtsApi(text: string, token: string, lang: "ko" | "en" = "ko")
 export interface SubtitleTiming {
   text: string;       // 한국어 자막
   heText?: string;    // 히브리어 자막 (선택)
+  enText?: string;    // 영어 자막 (선택)
   startSec: number;
   endSec: number;
+  verseNum?: number;  // 절 번호 (절 기반 배분 시 사용, 내부용)
 }
 
 export interface NarrationResult {
