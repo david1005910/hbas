@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 import { Download, Play, Send, RefreshCw, ExternalLink, Loader2, Upload, Film, Mic, AlignLeft, ChevronLeft, Save, Clock, Replace, Plus, Trash2, ToggleLeft, ToggleRight, Music, Zap, ChevronDown, ChevronUp, Check, AlertCircle, MessageSquare, Bot, User } from "lucide-react";
@@ -69,6 +69,9 @@ export function VideoStudio() {
   const [bgmUploading, setBgmUploading] = useState(false);
   const [bgmMsg, setBgmMsg] = useState("");
   const bgmInputRef = useRef<HTMLInputElement>(null);
+  // 씬 선택
+  const [selectedSceneNumber, setSelectedSceneNumber] = useState<number | null>(null);
+  const [sceneLoading, setSceneLoading] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -477,16 +480,17 @@ export function VideoStudio() {
     enabled: !!selectedProjectId,
   });
 
-  // 에피소드 선택 시 텍스트 자동 채우기 (SCRIPT 나레이션 → SRT → 제목 순)
+  // 에피소드 선택 — 씬 선택 초기화 (씬을 선택하면 텍스트 로드)
   async function handleSelectEpisode(episodeId: string) {
     setSelectedEpisodeId(episodeId);
+    setSelectedSceneNumber(null);
     setBgmInfo(null);
     setBgmMsg("");
     if (!episodeId) return;
     // BGM 정보 즉시 로드
     bgmApi.info(episodeId).then(setBgmInfo).catch(() => {});
 
-    // 우선 제목으로 즉시 채우기 (로딩 중 fallback)
+    // 에피소드 제목으로 임시 채우기
     if (episodes) {
       const ep = episodes.find((e) => e.id === episodeId);
       if (ep) {
@@ -494,18 +498,34 @@ export function VideoStudio() {
         setHebrewText(ep.titleHe || "");
       }
     }
+  }
 
-    // SCRIPT/SRT에서 실제 나레이션 텍스트 fetch
-    setSubtitleLoading(true);
+  // 씬 선택 — 해당 씬의 텍스트 + 키프레임 이미지 로드
+  async function handleSelectScene(sceneNum: number) {
+    if (!selectedEpisodeId) return;
+    setSelectedSceneNumber(sceneNum);
+    setSceneLoading(true);
     try {
-      const texts = await remotionApi.getEpisodeSubtitle(episodeId);
-      if (texts.koreanText) setKoreanText(texts.koreanText);
-      if (texts.hebrewText) setHebrewText(texts.hebrewText);
-      if (texts.englishText) setEnglishText(texts.englishText);
+      const data = await remotionApi.getEpisodeSceneText(selectedEpisodeId, sceneNum);
+      if (data.koreanText) setKoreanText(data.koreanText);
+      if (data.hebrewText) setHebrewText(data.hebrewText);
+      if (data.englishText) setEnglishText(data.englishText);
+      setVideoFileName(data.videoFileName);
+      sendMutation.mutate({
+        koreanText: data.koreanText,
+        hebrewText: data.hebrewText,
+        englishText: data.englishText,
+        language,
+        videoFileName: data.videoFileName,
+        audioFileName,
+        episodeId: selectedEpisodeId,
+        showSubtitle,
+        showNarration,
+      });
     } catch {
-      // fetch 실패 시 제목 fallback 유지
+      // 씬 텍스트 fetch 실패 — 현재 텍스트 유지
     } finally {
-      setSubtitleLoading(false);
+      setSceneLoading(false);
     }
   }
 
@@ -574,6 +594,29 @@ export function VideoStudio() {
       setBgmUploading(false);
     }
   }
+
+  // 자막 씬 인덱스 계산 (heText 변화 기준 → 같은 씬은 같은 heText)
+  const subtitleSceneAssignments = useMemo(() => {
+    if (subtitles.length === 0) return [] as number[];
+    const hasHe = subtitles.some((s) => s.heText && s.heText.trim());
+    if (hasHe) {
+      let scene = 1;
+      let prevHe = "";
+      return subtitles.map((sub) => {
+        if (sub.heText && sub.heText.trim() && sub.heText !== prevHe) {
+          if (prevHe !== "") scene++;
+          prevHe = sub.heText;
+        }
+        return scene;
+      });
+    }
+    // heText 없으면 총 시간을 기반으로 동일 분할
+    const total = subtitles[subtitles.length - 1]?.endSec ?? 1;
+    const ep = episodes?.find((e) => e.id === selectedEpisodeId);
+    const N = ep?.sceneCount ?? 5;
+    const segDur = total / N;
+    return subtitles.map((sub) => Math.min(Math.floor(sub.startSec / segDur) + 1, N));
+  }, [subtitles, episodes, selectedEpisodeId]);
 
   // 스튜디오로 전송
   const sendMutation = useMutation({
@@ -709,6 +752,32 @@ export function VideoStudio() {
                 </select>
               </div>
             )}
+            {selectedEpisodeId && (() => {
+              const ep = episodes?.find((e) => e.id === selectedEpisodeId);
+              const sceneCount = ep?.sceneCount ?? 5;
+              return (
+                <div>
+                  <label className="block text-xs text-white/60 mb-1">씬 번호</label>
+                  <select
+                    className="w-full rounded-xl px-3 py-2 text-sm text-white/90 focus:outline-none border border-white/25 focus:border-white/50 transition-colors"
+                    style={{ background: "rgba(255,255,255,0.10)", backdropFilter: "blur(8px)" }}
+                    value={selectedSceneNumber ?? ""}
+                    onChange={(e) => { if (e.target.value) handleSelectScene(Number(e.target.value)); }}
+                    disabled={sceneLoading}
+                  >
+                    <option value="">— 씬 선택 —</option>
+                    {Array.from({ length: sceneCount }, (_, i) => i + 1).map((n) => (
+                      <option key={n} value={n}>씬 {n}</option>
+                    ))}
+                  </select>
+                  {sceneLoading && (
+                    <p className="text-xs text-white/50 mt-1 flex items-center gap-1">
+                      <Loader2 size={11} className="animate-spin" /> 씬 텍스트 로딩 중...
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
           </section>
 
           {/* 언어 선택 */}
@@ -1616,62 +1685,86 @@ export function VideoStudio() {
                   {subtitleLoadError && <p className="text-xs text-red-400">{subtitleLoadError}</p>}
                 </div>
               ) : (
-                <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                  {subtitles.map((sub, i) => (
-                    <div
-                      key={i}
-                      className="rounded-2xl p-3 space-y-2 transition-all border border-white/25 hover:border-white/40 shadow-[0px_2px_12px_rgba(0,0,0,0.18)]"
-                      style={{ background: "rgba(255,255,255,0.10)", backdropFilter: "blur(12px)" }}
-                    >
-                      {/* 번호 + 시간 */}
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono text-amber-200 px-2 py-0.5 rounded-md border border-amber-300/25" style={{ background: "rgba(180,120,0,0.18)" }}>
-                          #{i + 1}
-                        </span>
-                        <span className="flex items-center gap-1 text-xs text-white/40 font-mono">
-                          <Clock size={10} />
-                          {formatSec(sub.startSec)} → {formatSec(sub.endSec)}
-                          <span className="text-white/30 ml-1">({(sub.endSec - sub.startSec).toFixed(1)}s)</span>
-                        </span>
-                      </div>
+                <div className="flex-1 overflow-y-auto space-y-1 pr-1">
+                  {subtitles.map((sub, i) => {
+                    const sceneNum = subtitleSceneAssignments[i] ?? 1;
+                    const isNewScene = i === 0 || (subtitleSceneAssignments[i] !== subtitleSceneAssignments[i - 1]);
+                    return (
+                      <div key={i}>
+                        {/* 씬 구분 헤더 */}
+                        {isNewScene && (
+                          <div
+                            className="sticky top-0 z-10 flex items-center gap-2 px-3 py-1.5 mb-1 mt-2 first:mt-0 rounded-xl border border-amber-400/30"
+                            style={{ background: "rgba(180,120,0,0.28)", backdropFilter: "blur(8px)" }}
+                          >
+                            <span className="text-amber-200 text-xs font-body font-bold">씬 {sceneNum}</span>
+                            {sub.heText && (
+                              <span className="text-amber-300/60 text-xs font-mono truncate max-w-[200px]" dir="rtl">
+                                {sub.heText.slice(0, 40)}{sub.heText.length > 40 ? "…" : ""}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <div
+                          className="rounded-2xl p-3 space-y-2 transition-all border border-white/20 hover:border-white/35 shadow-[0px_2px_8px_rgba(0,0,0,0.15)]"
+                          style={{ background: "rgba(255,255,255,0.08)", backdropFilter: "blur(12px)" }}
+                        >
+                          {/* 번호 + 시간 + 씬 배지 */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-mono text-amber-200/60 px-1.5 py-0.5 rounded border border-amber-300/20" style={{ background: "rgba(180,120,0,0.12)" }}>
+                              #{i + 1}
+                            </span>
+                            <span className="text-xs font-mono text-amber-400/50 px-1.5 py-0.5 rounded border border-amber-400/20" style={{ background: "rgba(180,120,0,0.08)" }}>
+                              씬{sceneNum}
+                            </span>
+                            <span className="flex items-center gap-1 text-xs text-white/35 font-mono">
+                              <Clock size={10} />
+                              {formatSec(sub.startSec)} → {formatSec(sub.endSec)}
+                              <span className="text-white/25 ml-1">({(sub.endSec - sub.startSec).toFixed(1)}s)</span>
+                            </span>
+                          </div>
 
-                      {/* 히브리어 */}
-                      <div>
-                        <label className="block text-xs text-white/45 mb-1">히브리어</label>
-                        <textarea
-                          rows={2}
-                          dir="rtl"
-                          className="w-full rounded-xl px-3 py-1.5 text-sm text-amber-200 resize-none focus:outline-none font-mono leading-relaxed border border-white/25 focus:border-amber-300/50 transition-colors" style={{ background: "rgba(255,255,255,0.10)", backdropFilter: "blur(8px)" }}
-                          value={sub.heText ?? ""}
-                          onChange={(e) => updateSubtitle(i, "heText", e.target.value)}
-                          placeholder="히브리어 입력"
-                        />
-                      </div>
+                          {/* 히브리어 */}
+                          <div>
+                            <label className="block text-xs text-amber-300/50 mb-1">🔤 히브리어</label>
+                            <textarea
+                              rows={2} dir="rtl"
+                              className="w-full rounded-xl px-3 py-1.5 text-sm text-amber-200 resize-none focus:outline-none font-mono leading-relaxed border border-amber-400/20 focus:border-amber-300/50 transition-colors"
+                              style={{ background: "rgba(180,120,0,0.08)", backdropFilter: "blur(8px)" }}
+                              value={sub.heText ?? ""}
+                              onChange={(e) => updateSubtitle(i, "heText", e.target.value)}
+                              placeholder="히브리어 자막"
+                            />
+                          </div>
 
-                      {/* 한국어 */}
-                      <div>
-                        <label className="block text-xs text-white/45 mb-1">한국어</label>
-                        <textarea
-                          rows={2}
-                          className="w-full rounded-xl px-3 py-1.5 text-sm text-white/90 resize-none focus:outline-none leading-relaxed border border-white/25 focus:border-white/50 transition-colors" style={{ background: "rgba(255,255,255,0.10)", backdropFilter: "blur(8px)" }}
-                          value={sub.text}
-                          onChange={(e) => updateSubtitle(i, "text", e.target.value)}
-                        />
-                      </div>
+                          {/* 한국어 */}
+                          <div>
+                            <label className="block text-xs text-white/40 mb-1">🇰🇷 한국어</label>
+                            <textarea
+                              rows={2}
+                              className="w-full rounded-xl px-3 py-1.5 text-sm text-white/90 resize-none focus:outline-none leading-relaxed border border-white/20 focus:border-white/45 transition-colors"
+                              style={{ background: "rgba(255,255,255,0.08)", backdropFilter: "blur(8px)" }}
+                              value={sub.text}
+                              onChange={(e) => updateSubtitle(i, "text", e.target.value)}
+                            />
+                          </div>
 
-                      {/* 영어 */}
-                      <div>
-                        <label className="block text-xs text-blue-300/60 mb-1">🇺🇸 English</label>
-                        <textarea
-                          rows={2}
-                          className="w-full rounded-xl px-3 py-1.5 text-sm text-blue-100/80 resize-none focus:outline-none leading-relaxed border border-blue-400/20 focus:border-blue-400/50 transition-colors" style={{ background: "rgba(30,80,200,0.10)", backdropFilter: "blur(8px)" }}
-                          value={sub.enText ?? ""}
-                          onChange={(e) => updateSubtitle(i, "enText", e.target.value)}
-                          placeholder="English subtitle"
-                        />
+                          {/* 영어 */}
+                          <div>
+                            <label className="block text-xs text-blue-300/50 mb-1">🇺🇸 English</label>
+                            <textarea
+                              rows={2}
+                              className="w-full rounded-xl px-3 py-1.5 text-sm text-blue-100/75 resize-none focus:outline-none leading-relaxed border border-blue-400/20 focus:border-blue-400/45 transition-colors"
+                              style={{ background: "rgba(30,80,200,0.08)", backdropFilter: "blur(8px)" }}
+                              value={sub.enText ?? ""}
+                              onChange={(e) => updateSubtitle(i, "enText", e.target.value)}
+                              placeholder="English subtitle"
+                            />
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

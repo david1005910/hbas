@@ -28,13 +28,13 @@ const NARRATION_VOICE = NARRATION_VOICE_KO;
 
 const NARRATION_AUDIO_CONFIG = {
   audioEncoding: "MP3",
-  speakingRate: 0.72,   // 0.75→0.72: 약간 느리게 — 중후한 나레이션 느낌 강화
+  speakingRate: 1.0,   // 1.0: 기본 속도
   volumeGainDb: 1.5,
 };
 
 const NARRATION_AUDIO_CONFIG_EN = {
   audioEncoding: "MP3",
-  speakingRate: 0.85,   // 영어는 한국어보다 빠르게
+  speakingRate: 1.0,   // 1.0: 기본 속도
   volumeGainDb: 1.5,
 };
 

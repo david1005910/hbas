@@ -14,6 +14,7 @@ import {
   generateNarrationForRemotionPublic,
   generateEnglishNarrationForRemotionPublic,
   getEpisodeSubtitle,
+  getEpisodeSceneText,
   distributeHebrewForEpisode,
   distributeEnglishForEpisode,
   distributeKoreanForEpisode,
@@ -206,6 +207,19 @@ router.get("/episode-subtitle/:episodeId", async (req: Request, res: Response) =
   try {
     const { episodeId } = req.params;
     const texts = await getEpisodeSubtitle(episodeId);
+    res.json(texts);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/v1/remotion/episode-scene/:episodeId/:sceneNumber — 씬별 텍스트 추출
+router.get("/episode-scene/:episodeId/:sceneNumber", async (req: Request, res: Response) => {
+  try {
+    const { episodeId, sceneNumber } = req.params;
+    const sceneNum = parseInt(sceneNumber, 10);
+    if (isNaN(sceneNum) || sceneNum < 1) return res.status(400).json({ error: "sceneNumber must be a positive integer" });
+    const texts = await getEpisodeSceneText(episodeId, sceneNum);
     res.json(texts);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

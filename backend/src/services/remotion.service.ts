@@ -407,6 +407,44 @@ export async function getEpisodeSubtitle(
   return { koreanText, hebrewText, englishText };
 }
 
+// ─── 씬별 자막 텍스트 추출 (VideoStudio 씬 선택용) ──────────────────────────
+
+export async function getEpisodeSceneText(
+  episodeId: string,
+  sceneNumber: number
+): Promise<{ koreanText: string; hebrewText: string; englishText: string; videoFileName: string }> {
+  const episode = await prisma.episode.findUnique({
+    where: { id: episodeId },
+    include: { contents: { orderBy: { createdAt: "desc" } } },
+  });
+  if (!episode) throw new Error("Episode not found");
+
+  const contents = episode.contents;
+  const srtKo = contents.find((c) => c.contentType === "SRT_KO");
+  const srtHe = contents.find((c) => c.contentType === "SRT_HE");
+  const srtEn = contents.find((c) => c.contentType === "SRT_EN");
+  const script = contents.find((c) => c.contentType === "SCRIPT");
+
+  let koreanText = srtKo?.content ? extractSrtSceneText(srtKo.content, sceneNumber) : "";
+  let hebrewText = srtHe?.content ? extractSrtSceneText(srtHe.content, sceneNumber) : "";
+  let englishText = srtEn?.content ? extractSrtSceneText(srtEn.content, sceneNumber) : "";
+
+  // SRT에서 못 찾은 경우 SCRIPT에서 추출
+  if ((!koreanText || !hebrewText) && script?.content) {
+    const fromScript = extractSceneText(script.content, sceneNumber, episode.titleKo, episode.titleHe ?? "");
+    if (!koreanText) koreanText = fromScript.koreanText;
+    if (!hebrewText) hebrewText = fromScript.hebrewText;
+  }
+
+  // 최종 fallback
+  if (!koreanText) koreanText = episode.titleKo;
+  if (!hebrewText) hebrewText = episode.titleHe ?? "";
+
+  const videoFileName = `preview_keyframe_${sceneNumber}.png`;
+
+  return { koreanText, hebrewText, englishText, videoFileName };
+}
+
 /** SRT 문자열 → 텍스트만 추출 (타임코드·인덱스 제거) */
 function srtSingleText(srt: string): string {
   return srt
@@ -754,6 +792,21 @@ function distributeEnglishToTimings(
 
 // ─── 기존 자막에 히브리어 자동 배분 ──────────────────────────────────────────
 
+/** 히브리어 씬 배열을 타이밍 배열의 heText에 시간 비례 배분 (한국어/영어와 동일한 방식) */
+function distributeHebrewToTimingsScene(
+  timings: SubtitleTiming[],
+  hebrewScenes: string[]
+): SubtitleTiming[] {
+  if (!hebrewScenes.length || timings.length === 0) return timings;
+  const N = hebrewScenes.length;
+  const total = timings[timings.length - 1].endSec;
+  const segDur = total / N;
+  return timings.map((t) => {
+    const idx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), N - 1) : 0;
+    return { ...t, heText: hebrewScenes[idx] ?? hebrewScenes[N - 1] ?? "" };
+  });
+}
+
 export async function distributeHebrewForEpisode(episodeId: string): Promise<SubtitleTiming[]> {
   const episode = await prisma.episode.findUnique({
     where: { id: episodeId },
@@ -767,20 +820,33 @@ export async function distributeHebrewForEpisode(episodeId: string): Promise<Sub
   const existing: SubtitleTiming[] = JSON.parse(fs.readFileSync(subtitlesPath, "utf-8"));
   if (!Array.isArray(existing) || existing.length === 0) throw new Error("자막 항목이 없습니다.");
 
-  const episodeHebrew = await fetchEpisodeHebrew(episode as any);
-  if (!episodeHebrew) throw new Error("히브리어 텍스트를 찾을 수 없습니다. SRT_HE 또는 SCRIPT HE를 먼저 생성하세요.");
+  // SRT_HE에서 씬별 텍스트 추출 (한국어/영어와 동일한 씬 기반 배분)
+  const srtHe = episode.contents.find((c) => c.contentType === "SRT_HE");
+  let hebrewScenes: string[] = [];
+
+  if (srtHe?.content) {
+    hebrewScenes = extractSrtAllScenes(srtHe.content);
+  }
+
+  // SRT_HE가 없으면 SCRIPT HE 또는 전체 히브리어 텍스트로 fallback
+  if (!hebrewScenes.length) {
+    const episodeHebrew = await fetchEpisodeHebrew(episode as any);
+    if (!episodeHebrew) throw new Error("히브리어 텍스트를 찾을 수 없습니다. SRT_HE 또는 SCRIPT HE를 먼저 생성하세요.");
+    hebrewScenes = [episodeHebrew];
+  }
 
   const totalDuration = existing[existing.length - 1].endSec;
-  const updated = distributeHebrewToTimings(existing, episodeHebrew, totalDuration);
+  const updated = distributeHebrewToTimingsScene(existing, hebrewScenes);
   const subtitlesJson = JSON.stringify(updated);
 
   fs.writeFileSync(subtitlesPath, subtitlesJson, "utf-8");
 
   const currentProps = readProps();
   const currentDuration = readDurationInFrames();
-  writeProps({ ...(currentProps ?? { koreanText: "", hebrewText: episodeHebrew }), subtitlesJson }, currentDuration);
+  const heText = hebrewScenes.join(" ");
+  writeProps({ ...(currentProps ?? { koreanText: "", hebrewText: heText }), subtitlesJson }, currentDuration);
 
-  console.log(`[Subtitle] 히브리어 배분 완료: ${updated.filter((s) => s.heText).length}개 항목`);
+  console.log(`[Subtitle] 히브리어 배분 완료: ${updated.filter((s) => s.heText).length}개 항목 (${hebrewScenes.length}씬)`);
   return updated;
 }
 
@@ -875,6 +941,49 @@ export async function distributeKoreanForEpisode(episodeId: string): Promise<Sub
   const totalDuration = existing[existing.length - 1].endSec;
   let updated: SubtitleTiming[];
 
+  // ── 1순위: SRT_KO 씬 배분 (히브리어·영어와 동일한 씬 수로 정렬 보장) ────────
+  const srtKoFirst = episode.contents.find((c) => c.contentType === "SRT_KO");
+  if (srtKoFirst?.content) {
+    const koreanScenes = extractSrtAllScenes(srtKoFirst.content);
+    if (koreanScenes.length > 0) {
+      // 기존 한국어 TTS 자막이 SRT 씬보다 다양하면 보존
+      const existingKoValues = new Set(existing.map((t) => t.text).filter(Boolean));
+      if (existingKoValues.size > koreanScenes.length) {
+        console.log(`[Subtitle] 기존 한국어 ${existingKoValues.size}개 고유값 > SRT 씬 ${koreanScenes.length}개 → TTS 자막 보존`);
+        return existing;
+      }
+      const N = koreanScenes.length;
+      const segDur = totalDuration / N;
+      // 씬별 항목 그룹화 (sub-phrase 분할용)
+      const sceneGroupsMap = new Map<number, SubtitleTiming[]>();
+      existing.forEach((t) => {
+        const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), N - 1) : 0;
+        if (!sceneGroupsMap.has(sIdx)) sceneGroupsMap.set(sIdx, []);
+        sceneGroupsMap.get(sIdx)!.push(t);
+      });
+      // 씬별 sub-phrase 분할: 같은 씬 내 항목마다 고유 구문
+      const scenePhrases = new Map<number, string[]>();
+      sceneGroupsMap.forEach((group, sIdx) => {
+        scenePhrases.set(sIdx, splitKoreanIntoN(koreanScenes[sIdx], group.length));
+      });
+      const posCounters = new Map<number, number>();
+      updated = existing.map((t) => {
+        const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), N - 1) : 0;
+        const phrases = scenePhrases.get(sIdx) ?? [koreanScenes[sIdx]];
+        const pos = posCounters.get(sIdx) ?? 0;
+        posCounters.set(sIdx, pos + 1);
+        return { ...t, text: phrases[Math.min(pos, phrases.length - 1)] };
+      });
+      const subtitlesJson = JSON.stringify(updated);
+      fs.writeFileSync(subtitlesPath, subtitlesJson, "utf-8");
+      const currentProps = readProps();
+      writeProps({ ...(currentProps ?? { koreanText: "", hebrewText: "" }), subtitlesJson }, readDurationInFrames());
+      console.log(`[Subtitle] 한국어 배분(SRT_KO 씬 + sub-phrase, ${N}씬) 완료: ${updated.filter((s) => s.text).length}개 항목`);
+      return updated;
+    }
+  }
+
+  // ── 2순위: BibleVerse 절 기반 배분 (SRT_KO 없을 때) ─────────────────────────
   // 1순위: BibleVerse 절 기반 배분 (verseRange가 있을 때, 한국어 텍스트가 실제로 있을 때만)
   if (episode.verseRange && episode.bibleBookId) {
     const boundaries = await getVerseTimeBoundaries(episode.bibleBookId, episode.verseRange, totalDuration);
@@ -1089,76 +1198,36 @@ export async function distributeEnglishForEpisode(episodeId: string): Promise<Su
   if (!englishScenes.length) throw new Error("SRT_EN에서 텍스트를 추출할 수 없습니다.");
 
   const totalDuration = existing[existing.length - 1].endSec;
-  let updated: SubtitleTiming[];
+  const N = englishScenes.length;
+  const segDur = totalDuration / N;
 
-  // 1순위: verseRange 있으면 절 비례 배분 (씬 수와 절 수 불일치해도 비례 적용)
-  if (episode.verseRange && episode.bibleBookId) {
-    const boundaries = await getVerseTimeBoundaries(episode.bibleBookId, episode.verseRange, totalDuration);
-    if (boundaries && boundaries.length > 0) {
-      const V = boundaries.length;
-      const K = englishScenes.length;
-      // 씬별 항목 그룹화 (sub-phrase 분할용) — 1:1과 비례 공통
-      const enSceneGroupsMap = new Map<number, SubtitleTiming[]>();
-      existing.forEach((t) => {
-        let vIdx = boundaries.findIndex((b, i) => {
-          const isLast = i === boundaries.length - 1;
-          return t.startSec >= b.startSec && (isLast || t.startSec < boundaries[i + 1].startSec);
-        });
-        if (vIdx < 0) vIdx = V - 1;
-        const sIdx = englishScenes.length === V ? vIdx : Math.min(Math.floor(vIdx * K / V), K - 1);
-        if (!enSceneGroupsMap.has(sIdx)) enSceneGroupsMap.set(sIdx, []);
-        enSceneGroupsMap.get(sIdx)!.push(t);
-      });
+  // 씬별 항목 그룹화 (sub-phrase 분할용)
+  const enSceneGroupsMap = new Map<number, SubtitleTiming[]>();
+  existing.forEach((t) => {
+    const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), N - 1) : 0;
+    if (!enSceneGroupsMap.has(sIdx)) enSceneGroupsMap.set(sIdx, []);
+    enSceneGroupsMap.get(sIdx)!.push(t);
+  });
 
-      const enScenePhrases = new Map<number, string[]>();
-      enSceneGroupsMap.forEach((group, sIdx) => {
-        enScenePhrases.set(sIdx, splitKoreanIntoN(englishScenes[sIdx], group.length));
-      });
+  // 씬별 sub-phrase 분할
+  const enScenePhrases = new Map<number, string[]>();
+  enSceneGroupsMap.forEach((group, sIdx) => {
+    enScenePhrases.set(sIdx, splitKoreanIntoN(englishScenes[sIdx], group.length));
+  });
 
-      const enPosCounters = new Map<number, number>();
-      if (englishScenes.length === V) {
-        // 씬 수 = 절 수: 1:1 절 기반 매핑 + sub-phrase 분할
-        updated = existing.map((t) => {
-          let vIdx = boundaries.findIndex((b, i) => {
-            const isLast = i === boundaries.length - 1;
-            return t.startSec >= b.startSec && (isLast || t.startSec < boundaries[i + 1].startSec);
-          });
-          if (vIdx < 0) vIdx = V - 1;
-          const phrases = enScenePhrases.get(vIdx) ?? [englishScenes[vIdx] ?? englishScenes[V - 1]];
-          const pos = enPosCounters.get(vIdx) ?? 0;
-          enPosCounters.set(vIdx, pos + 1);
-          return { ...t, enText: phrases[Math.min(pos, phrases.length - 1)] };
-        });
-        console.log(`[Subtitle] 영어 배분(절 1:1 + sub-phrase) 완료: ${updated.filter((s) => s.enText).length}개 항목 (${V}절)`);
-      } else {
-        // 씬 수 != 절 수: 절 인덱스 → 씬 비례 매핑 + sub-phrase 분할
-        updated = existing.map((t) => {
-          let vIdx = boundaries.findIndex((b, i) => {
-            const isLast = i === boundaries.length - 1;
-            return t.startSec >= b.startSec && (isLast || t.startSec < boundaries[i + 1].startSec);
-          });
-          if (vIdx < 0) vIdx = V - 1;
-          const sIdx = Math.min(Math.floor(vIdx * K / V), K - 1);
-          const phrases = enScenePhrases.get(sIdx) ?? [englishScenes[sIdx]];
-          const pos = enPosCounters.get(sIdx) ?? 0;
-          enPosCounters.set(sIdx, pos + 1);
-          return { ...t, enText: phrases[Math.min(pos, phrases.length - 1)] };
-        });
-        console.log(`[Subtitle] 영어 배분(절 비례 ${V}절→${K}씬 + sub-phrase) 완료: ${updated.filter((s) => s.enText).length}개 항목`);
-      }
-      const subtitlesJson = JSON.stringify(updated);
-      fs.writeFileSync(subtitlesPath, subtitlesJson, "utf-8");
-      writeProps({ ...(readProps() ?? { koreanText: "", hebrewText: "" }), subtitlesJson }, readDurationInFrames());
-      return updated;
-    }
-  }
+  const enPosCounters = new Map<number, number>();
+  const updated = existing.map((t) => {
+    const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), N - 1) : 0;
+    const phrases = enScenePhrases.get(sIdx) ?? [englishScenes[sIdx]];
+    const pos = enPosCounters.get(sIdx) ?? 0;
+    enPosCounters.set(sIdx, pos + 1);
+    return { ...t, enText: phrases[Math.min(pos, phrases.length - 1)] };
+  });
 
-  // 2순위: verseRange 없을 때만 시간 비례 배분
-  updated = distributeEnglishToTimings(existing, englishScenes);
   const subtitlesJson = JSON.stringify(updated);
   fs.writeFileSync(subtitlesPath, subtitlesJson, "utf-8");
   writeProps({ ...(readProps() ?? { koreanText: "", hebrewText: "" }), subtitlesJson }, readDurationInFrames());
-  console.log(`[Subtitle] 영어 배분(시간비례) 완료: ${updated.filter((s) => s.enText).length}개 항목 (${englishScenes.length}씬)`);
+  console.log(`[Subtitle] 영어 배분(SRT_EN 씬 + sub-phrase, ${N}씬) 완료: ${updated.filter((s) => s.enText).length}개 항목`);
   return updated;
 }
 

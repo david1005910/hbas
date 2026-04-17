@@ -69,6 +69,12 @@ export const remotionApi = {
       `/remotion/episode-subtitle/${episodeId}`
     ).then((r) => r.data),
 
+  // 씬별 텍스트 추출 (SRT_KO / SRT_HE / SRT_EN의 N번째 씬)
+  getEpisodeSceneText: (episodeId: string, sceneNumber: number) =>
+    api.get<{ koreanText: string; hebrewText: string; englishText: string; videoFileName: string }>(
+      `/remotion/episode-scene/${episodeId}/${sceneNumber}`
+    ).then((r) => r.data),
+
   // 한국어 나레이션 TTS 생성 → public/narration.mp3
   generateNarration: (episodeId: string) =>
     api.post<{ success: boolean; fileName: string; textLength: number; durationSec?: number; durationInFrames?: number; subtitlesJson?: string }>(
