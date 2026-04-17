@@ -5,6 +5,7 @@ import { Download, Play, Send, RefreshCw, ExternalLink, Loader2, Upload, Film, M
 import { PageWrapper } from "../components/layout/PageWrapper";
 import { projectsApi } from "../api/projects";
 import { remotionApi, RemotionProps, RenderStatus, SubEntry, WordReplacement, ChatMessage } from "../api/remotion";
+import { bgmApi, BgmInfo } from "../api/bgm";
 
 const REMOTION_STUDIO_URL =
   (import.meta.env.VITE_REMOTION_URL as string) || "http://localhost:3002";
@@ -63,6 +64,12 @@ export function VideoStudio() {
   const [chatLoading, setChatLoading] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  // BGM 업로드
+  const [bgmInfo, setBgmInfo] = useState<BgmInfo | null>(null);
+  const [bgmUploading, setBgmUploading] = useState(false);
+  const [bgmMsg, setBgmMsg] = useState("");
+  const bgmInputRef = useRef<HTMLInputElement>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -473,7 +480,11 @@ export function VideoStudio() {
   // 에피소드 선택 시 텍스트 자동 채우기 (SCRIPT 나레이션 → SRT → 제목 순)
   async function handleSelectEpisode(episodeId: string) {
     setSelectedEpisodeId(episodeId);
+    setBgmInfo(null);
+    setBgmMsg("");
     if (!episodeId) return;
+    // BGM 정보 즉시 로드
+    bgmApi.info(episodeId).then(setBgmInfo).catch(() => {});
 
     // 우선 제목으로 즉시 채우기 (로딩 중 fallback)
     if (episodes) {
@@ -526,6 +537,41 @@ export function VideoStudio() {
     } catch (err: any) {
       setEnNarrationError(err?.response?.data?.error ?? err.message);
       setEnNarrationStatus("error");
+    }
+  }
+
+  // BGM 파일 업로드
+  async function handleBgmUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !selectedEpisodeId) return;
+    setBgmUploading(true);
+    setBgmMsg("");
+    try {
+      const res = await bgmApi.upload(selectedEpisodeId, file);
+      const info = await bgmApi.info(selectedEpisodeId);
+      setBgmInfo(info);
+      setBgmMsg(`✓ BGM 업로드 완료 — ${res.filename} (${res.sizeKb}KB)`);
+    } catch (err: any) {
+      setBgmMsg(`⚠ ${err?.response?.data?.error ?? err.message ?? "업로드 실패"}`);
+    } finally {
+      setBgmUploading(false);
+      if (bgmInputRef.current) bgmInputRef.current.value = "";
+    }
+  }
+
+  async function handleBgmDelete() {
+    if (!selectedEpisodeId) return;
+    setBgmUploading(true);
+    setBgmMsg("");
+    try {
+      await bgmApi.delete(selectedEpisodeId);
+      const info = await bgmApi.info(selectedEpisodeId);
+      setBgmInfo(info);
+      setBgmMsg("✓ 커스텀 BGM 삭제 — 기본 BGM으로 복원");
+    } catch (err: any) {
+      setBgmMsg(`⚠ ${err?.response?.data?.error ?? err.message ?? "삭제 실패"}`);
+    } finally {
+      setBgmUploading(false);
     }
   }
 
@@ -1093,6 +1139,66 @@ export function VideoStudio() {
                 {audioUploadError && <p className="text-xs text-red-400 mt-1">⚠ {audioUploadError}</p>}
               </div>
             </div>
+          </section>
+
+          {/* ── 배경음악 (BGM) ── */}
+          <section className="rounded-2xl p-4 space-y-2 border border-white/30 shadow-[0px_4px_24px_rgba(0,0,0,0.20),inset_0px_0px_12px_rgba(255,255,255,0.10)]" style={{ background: "rgba(255,255,255,0.13)", backdropFilter: "blur(14px)" }}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-amber-200 text-sm flex items-center gap-1.5" style={{ textShadow: "0px 1px 3px rgba(0,0,0,0.30)" }}>
+                <Music size={13} /> 배경음악 (BGM)
+              </h3>
+              {bgmInfo && (
+                <span className={`text-xs px-2 py-0.5 rounded-full border ${bgmInfo.isCustom ? "text-emerald-300 border-emerald-400/30 bg-emerald-400/10" : "text-white/40 border-white/20 bg-white/5"}`}>
+                  {bgmInfo.isCustom ? `커스텀 (${bgmInfo.activeFileSizeKb ?? "?"}KB)` : "기본 BGM"}
+                </span>
+              )}
+            </div>
+
+            {!selectedEpisodeId ? (
+              <p className="text-xs text-white/40">에피소드를 먼저 선택하세요.</p>
+            ) : (
+              <div className="space-y-2">
+                {/* 업로드 버튼 */}
+                <input
+                  ref={bgmInputRef}
+                  type="file"
+                  accept=".mp3,.wav,.aac,.m4a,.ogg,.flac"
+                  className="hidden"
+                  onChange={handleBgmUpload}
+                />
+                <button
+                  onClick={() => bgmInputRef.current?.click()}
+                  disabled={bgmUploading}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 text-emerald-200 border border-emerald-400/30 rounded-xl text-xs font-body transition-all disabled:opacity-40 shadow-[0px_2px_12px_rgba(0,0,0,0.15)]"
+                  style={{ background: "rgba(20,120,60,0.18)", backdropFilter: "blur(12px)" }}
+                >
+                  {bgmUploading ? (
+                    <><Loader2 size={12} className="animate-spin" /> 처리 중…</>
+                  ) : (
+                    <><Upload size={12} /> BGM 파일 업로드 (MP3/WAV…)</>
+                  )}
+                </button>
+
+                {/* 커스텀 BGM 삭제 */}
+                {bgmInfo?.isCustom && (
+                  <button
+                    onClick={handleBgmDelete}
+                    disabled={bgmUploading}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 text-red-300 border border-red-400/25 rounded-xl text-xs font-body transition-all disabled:opacity-40 hover:bg-red-400/10"
+                    style={{ background: "rgba(200,50,50,0.10)", backdropFilter: "blur(10px)" }}
+                  >
+                    <Trash2 size={12} /> 커스텀 BGM 삭제 (기본으로 복원)
+                  </button>
+                )}
+
+                {/* 상태 메시지 */}
+                {bgmMsg && (
+                  <p className={`text-xs ${bgmMsg.startsWith("✓") ? "text-emerald-400" : "text-red-400"}`}>
+                    {bgmMsg}
+                  </p>
+                )}
+              </div>
+            )}
           </section>
 
           {/* 자막 편집 */}
