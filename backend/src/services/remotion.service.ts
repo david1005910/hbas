@@ -24,6 +24,8 @@ export interface RemotionProps {
   subtitlesJson?: string; // JSON: Array<{text,startSec,endSec}>
   showSubtitle?: boolean;
   showNarration?: boolean;
+  bgmFileName?: string;   // BGM 파일명 (public/ 기준)
+  bgmVolume?: number;     // 0.0 ~ 1.0
 }
 
 // ─── data.json 읽기/쓰기 ─────────────────────────────────────────────────────
@@ -41,6 +43,8 @@ export function writeProps(props: RemotionProps, durationInFrames?: number): voi
     subtitlesJson: props.subtitlesJson ?? "",
     showSubtitle: props.showSubtitle ?? true,
     showNarration: props.showNarration ?? true,
+    bgmFileName: props.bgmFileName ?? "",
+    bgmVolume: props.bgmVolume ?? 0.15,
   };
   if (props.episodeId) payload.episodeId = props.episodeId;
   fs.writeFileSync(dataPath, JSON.stringify(payload, null, 2), "utf-8");
@@ -63,6 +67,8 @@ function updateRootDefaultProps(props: RemotionProps, durationInFrames = 150): v
   const sj = JSON.stringify(props.subtitlesJson ?? "");
   const showSub = props.showSubtitle !== false;
   const showNarr = props.showNarration !== false;
+  const bmf = JSON.stringify(props.bgmFileName ?? "");
+  const bmv = typeof props.bgmVolume === "number" ? props.bgmVolume : 0.15;
 
   const content = `import React from 'react';
 import { Composition } from 'remotion';
@@ -78,6 +84,8 @@ const defaultProps = {
   subtitlesJson: ${sj},
   showSubtitle: ${showSub},
   showNarration: ${showNarr},
+  bgmFileName: ${bmf},
+  bgmVolume: ${bmv},
 };
 
 export const RemotionRoot: React.FC = () => {
@@ -1798,4 +1806,53 @@ export async function generateEnglishNarrationForRemotionPublic(
 
   console.log(`[Remotion-TTS-EN] ${narrationDuration.toFixed(2)}초 → ${durationInFrames}프레임`);
   return { fileName, textLength: narrationText.length, durationSec: narrationDuration, durationInFrames, subtitlesJson };
+}
+
+// ─── BGM을 Remotion public/ 에 복사하고 props 업데이트 ───────────────────────
+
+/**
+ * 에피소드 BGM을 Remotion public/ 에 복사하고 bgmFileName/bgmVolume을 props에 반영.
+ * @param episodeId 에피소드 ID
+ * @param bgmVolume 0.0 ~ 1.0 (기본 0.15)
+ */
+export async function applyBgmToRemotionPublic(
+  episodeId: string,
+  bgmVolume = 0.15
+): Promise<{ bgmFileName: string; bgmVolume: number }> {
+  const episode = await prisma.episode.findUnique({ where: { id: episodeId } });
+  if (!episode) throw new Error("Episode not found");
+
+  const defaultBgm = process.env.BGM_PATH || "/app/storage/bgm/gregorian.mp3";
+  const sourcePath = episode.bgmUrl ? `/app${episode.bgmUrl}` : defaultBgm;
+
+  if (!fs.existsSync(sourcePath)) throw new Error(`BGM 파일을 찾을 수 없습니다: ${sourcePath}`);
+
+  const ext = path.extname(sourcePath) || ".mp3";
+  const bgmFileName = `bgm${ext}`;
+  const destDir = path.join(PROJECT_PATH, "public");
+  fs.mkdirSync(destDir, { recursive: true });
+  fs.copyFileSync(sourcePath, path.join(destDir, bgmFileName));
+
+  const vol = Math.max(0, Math.min(1, bgmVolume));
+  const currentProps = readProps();
+  writeProps(
+    { ...(currentProps ?? { koreanText: "", hebrewText: "" }), bgmFileName, bgmVolume: vol },
+    readDurationInFrames()
+  );
+
+  console.log(`[BGM] Remotion public/ 복사 완료: ${bgmFileName}, volume=${vol}`);
+  return { bgmFileName, bgmVolume: vol };
+}
+
+/**
+ * BGM 음량만 업데이트 (파일 복사 없이 props만 변경)
+ */
+export function updateBgmVolume(bgmVolume: number): void {
+  const vol = Math.max(0, Math.min(1, bgmVolume));
+  const currentProps = readProps();
+  writeProps(
+    { ...(currentProps ?? { koreanText: "", hebrewText: "" }), bgmVolume: vol },
+    readDurationInFrames()
+  );
+  console.log(`[BGM] 음량 업데이트: ${vol}`);
 }

@@ -69,6 +69,7 @@ export function VideoStudio() {
   const [bgmInfo, setBgmInfo] = useState<BgmInfo | null>(null);
   const [bgmUploading, setBgmUploading] = useState(false);
   const [bgmMsg, setBgmMsg] = useState("");
+  const [bgmVolume, setBgmVolume] = useState(15); // 0~100 (%)
   const bgmInputRef = useRef<HTMLInputElement>(null);
   // 씬 선택
   const [selectedSceneNumber, setSelectedSceneNumber] = useState<number | null>(null);
@@ -665,6 +666,37 @@ export function VideoStudio() {
     } finally {
       setBgmUploading(false);
     }
+  }
+
+  async function handleBgmApply() {
+    if (!selectedEpisodeId) return;
+    setBgmUploading(true);
+    setBgmMsg("");
+    try {
+      const res = await fetch(`/api/v1/remotion/bgm/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ episodeId: selectedEpisodeId, bgmVolume: bgmVolume / 100 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "적용 실패");
+      setBgmMsg(`✓ BGM 적용 완료 (음량 ${bgmVolume}%)`);
+    } catch (err: any) {
+      setBgmMsg(`⚠ ${err.message}`);
+    } finally {
+      setBgmUploading(false);
+    }
+  }
+
+  async function handleBgmVolumeChange(vol: number) {
+    setBgmVolume(vol);
+    try {
+      await fetch(`/api/v1/remotion/bgm/volume`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bgmVolume: vol / 100 }),
+      });
+    } catch { /* 무시 */ }
   }
 
   // 자막 씬 인덱스 계산 — 백엔드와 동일한 균등 시간 분할 방식
@@ -1337,6 +1369,37 @@ export function VideoStudio() {
                     <><Loader2 size={12} className="animate-spin" /> 처리 중…</>
                   ) : (
                     <><Upload size={12} /> BGM 파일 업로드 (MP3/WAV…)</>
+                  )}
+                </button>
+
+                {/* BGM 음량 슬라이더 */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs text-white/60">
+                    <span>BGM 음량</span>
+                    <span className="text-amber-200 font-mono">{bgmVolume}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={bgmVolume}
+                    onChange={(e) => handleBgmVolumeChange(Number(e.target.value))}
+                    className="w-full accent-amber-400"
+                  />
+                </div>
+
+                {/* BGM 적용 버튼 */}
+                <button
+                  onClick={handleBgmApply}
+                  disabled={bgmUploading}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 text-amber-200 border border-amber-400/30 rounded-xl text-xs font-body transition-all disabled:opacity-40"
+                  style={{ background: "rgba(180,120,0,0.18)", backdropFilter: "blur(12px)" }}
+                >
+                  {bgmUploading ? (
+                    <><Loader2 size={12} className="animate-spin" /> 처리 중…</>
+                  ) : (
+                    <>🎵 BGM 미리보기 적용</>
                   )}
                 </button>
 

@@ -20,6 +20,8 @@ import {
   distributeKoreanForEpisode,
   syncAllSubtitlesForEpisode,
   extractAllEnglishNarration,
+  applyBgmToRemotionPublic,
+  updateBgmVolume,
   PROJECT_PATH,
 } from "../services/remotion.service";
 import {
@@ -583,6 +585,33 @@ router.post("/chat", async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error("[StudioChat] 오류:", err.message);
     res.status(500).json({ error: `AI 채팅 오류: ${err.message}` });
+  }
+});
+
+// ─── BGM 적용 / 음량 업데이트 ──────────────────────────────────────────────────
+
+/** BGM을 Remotion public/ 에 복사하고 props 반영 */
+router.post("/bgm/apply", async (req: Request, res: Response) => {
+  try {
+    const { episodeId, bgmVolume } = req.body;
+    if (!episodeId) return res.status(400).json({ error: "episodeId 필수" });
+    const vol = typeof bgmVolume === "number" ? bgmVolume : 0.15;
+    const result = await applyBgmToRemotionPublic(episodeId, vol);
+    res.json({ message: "BGM 적용 완료", ...result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** BGM 음량만 업데이트 */
+router.patch("/bgm/volume", (req: Request, res: Response) => {
+  try {
+    const { bgmVolume } = req.body;
+    if (typeof bgmVolume !== "number") return res.status(400).json({ error: "bgmVolume(number) 필수" });
+    updateBgmVolume(bgmVolume);
+    res.json({ message: "BGM 음량 업데이트 완료", bgmVolume });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
