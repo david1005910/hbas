@@ -1448,19 +1448,37 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
 
   const segDur = totalDuration / refCount;
 
+  // verseNum 기반 히브리어 맵 (non-singleScene 경로용)
+  let verseHeMapForNonSingle: Map<number, string> | null = null;
+  if (!singleScene && episode.verseRange && episode.bibleBookId) {
+    const verseHeBoundsNS = await getVerseHebrewBoundaries(episode.bibleBookId, episode.verseRange, totalDuration);
+    if (verseHeBoundsNS && verseHeBoundsNS.length > 0) {
+      verseHeMapForNonSingle = new Map(verseHeBoundsNS.map((b) => [b.verseNum, b.hebrewText]));
+      console.log(`[Subtitle] non-singleScene verseNum HE 맵 생성: ${verseHeBoundsNS.length}절`);
+    }
+  }
+
   const updated: SubtitleTiming[] = existing.map((t, i) => {
     const entry: SubtitleTiming = { ...t };
     if (koChunks) {
       entry.text = applyWordReplacements(koChunks[i] ?? "");
     } else if (koScenes.length > 0) {
-      const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), koScenes.length - 1) : 0;
-      entry.text = applyWordReplacements(koScenes[sIdx] ?? "");
+      // TTS로 이미 텍스트가 설정된 경우 덮어쓰지 않음 (TTS 단어 단위 자막 보존)
+      if (!entry.text) {
+        const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), koScenes.length - 1) : 0;
+        entry.text = applyWordReplacements(koScenes[sIdx] ?? "");
+      }
     }
     if (heChunks) {
       entry.heText = heChunks[i] ?? "";
     } else if (heScenes.length > 0) {
-      const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), heScenes.length - 1) : 0;
-      entry.heText = heScenes[sIdx] ?? "";
+      // verseNum이 있으면 verseNum 직접 매핑, 없으면 시간 비례
+      if (verseHeMapForNonSingle && typeof (t as any).verseNum === "number") {
+        entry.heText = verseHeMapForNonSingle.get((t as any).verseNum) ?? entry.heText ?? "";
+      } else {
+        const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), heScenes.length - 1) : 0;
+        entry.heText = heScenes[sIdx] ?? "";
+      }
     }
     if (enChunks) {
       entry.enText = enChunks[i] ?? "";

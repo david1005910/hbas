@@ -28,5 +28,10 @@
     "from": "신",
     "to": "앨로힘",
     "enabled": true
+  },
+  {
+    "from": "앨로힘",
+    "to": "엘로힘",
+    "enabled": true
   }
 ]
