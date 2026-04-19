@@ -1341,8 +1341,18 @@ export function VideoStudio() {
                 <Music size={13} /> 배경음악 (BGM)
               </h3>
               {bgmInfo && (
-                <span className={`text-xs px-2 py-0.5 rounded-full border ${bgmInfo.isCustom ? "text-emerald-300 border-emerald-400/30 bg-emerald-400/10" : "text-white/40 border-white/20 bg-white/5"}`}>
-                  {bgmInfo.isCustom ? `커스텀 (${bgmInfo.activeFileSizeKb ?? "?"}KB)` : "기본 BGM"}
+                <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                  bgmInfo.isCustom && !bgmInfo.activeFileExists
+                    ? "text-red-300 border-red-400/30 bg-red-400/10"
+                    : bgmInfo.isCustom
+                    ? "text-emerald-300 border-emerald-400/30 bg-emerald-400/10"
+                    : "text-white/40 border-white/20 bg-white/5"
+                }`}>
+                  {bgmInfo.isCustom && !bgmInfo.activeFileExists
+                    ? "⚠ 파일 없음"
+                    : bgmInfo.isCustom
+                    ? `커스텀 (${bgmInfo.activeFileSizeKb}KB)`
+                    : "기본 BGM"}
                 </span>
               )}
             </div>
@@ -1371,6 +1381,13 @@ export function VideoStudio() {
                     <><Upload size={12} /> BGM 파일 업로드 (MP3/WAV…)</>
                   )}
                 </button>
+
+                {/* 파일 없음 경고 */}
+                {bgmInfo?.isCustom && !bgmInfo.activeFileExists && (
+                  <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
+                    ⚠ 업로드된 BGM 파일이 서버에 없습니다. 재업로드해주세요.
+                  </p>
+                )}
 
                 {/* BGM 음량 슬라이더 */}
                 <div className="space-y-1">

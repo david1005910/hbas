@@ -1823,9 +1823,17 @@ export async function applyBgmToRemotionPublic(
   if (!episode) throw new Error("Episode not found");
 
   const defaultBgm = process.env.BGM_PATH || "/app/storage/bgm/gregorian.mp3";
-  const sourcePath = episode.bgmUrl ? `/app${episode.bgmUrl}` : defaultBgm;
+  let sourcePath = episode.bgmUrl ? `/app${episode.bgmUrl}` : defaultBgm;
 
-  if (!fs.existsSync(sourcePath)) throw new Error(`BGM 파일을 찾을 수 없습니다: ${sourcePath}`);
+  // 커스텀 BGM 파일이 없으면 기본 BGM으로 폴백 (파일 소실 방어)
+  if (!fs.existsSync(sourcePath)) {
+    console.warn(`[BGM] 커스텀 파일 없음 (${sourcePath}), 기본 BGM으로 폴백`);
+    sourcePath = defaultBgm;
+    // DB의 stale bgmUrl 초기화
+    await prisma.episode.update({ where: { id: episodeId }, data: { bgmUrl: null } });
+  }
+
+  if (!fs.existsSync(sourcePath)) throw new Error(`BGM 파일을 찾을 수 없습니다: ${sourcePath} (기본 BGM도 없음)`);
 
   const ext = path.extname(sourcePath) || ".mp3";
   const bgmFileName = `bgm${ext}`;
