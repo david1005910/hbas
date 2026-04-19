@@ -1510,10 +1510,26 @@ export async function generateNarrationForRemotionPublic(
     console.log(`[Remotion-TTS] 자막 편집기 직접 전달 텍스트 사용 (${narrationText.length}자) ← 최우선`);
   }
 
-  // 1순위: subtitles.json — 자막 편집기 저장 내용
+  // 1순위: SRT_KO DB — 에피소드별로 고유하게 저장되어 있어 신뢰도가 가장 높음
+  if (!narrationText) {
+    const srtKoForText = episode.contents.find((c) => c.contentType === "SRT_KO");
+    if (srtKoForText?.content) {
+      narrationText = extractSrtAllScenes(srtKoForText.content).join(" ");
+      if (narrationText) {
+        console.log(`[Remotion-TTS] SRT_KO DB 사용 (${narrationText.length}자)`);
+      }
+    }
+  }
+
+  // 2순위: subtitles.json — 자막 편집기 저장 내용 (단, data.json의 episodeId와 일치할 때만 사용)
   if (!narrationText) {
     const subtitlesFilePath = path.join(PROJECT_PATH, "public", "subtitles.json");
-    if (fs.existsSync(subtitlesFilePath)) {
+    const dataJsonPath = path.join(PROJECT_PATH, "public", "data.json");
+    const dataEpisodeId = fs.existsSync(dataJsonPath)
+      ? (() => { try { return JSON.parse(fs.readFileSync(dataJsonPath, "utf-8")).episodeId; } catch { return null; } })()
+      : null;
+    const isSameEpisode = !dataEpisodeId || dataEpisodeId === episodeId;
+    if (isSameEpisode && fs.existsSync(subtitlesFilePath)) {
       try {
         const rawSubs: Array<{ text?: string }> = JSON.parse(fs.readFileSync(subtitlesFilePath, "utf-8"));
         if (Array.isArray(rawSubs) && rawSubs.length > 0) {
@@ -1533,20 +1549,12 @@ export async function generateNarrationForRemotionPublic(
       } catch (e) {
         console.warn("[Remotion-TTS] subtitles.json 읽기 실패:", (e as Error).message);
       }
+    } else if (!isSameEpisode) {
+      console.log(`[Remotion-TTS] subtitles.json 스킵 — 다른 에피소드(${dataEpisodeId}) 데이터`);
     }
   }
 
-  // 2순위: SRT_KO DB
-  if (!narrationText) {
-    const srtKoForText = episode.contents.find((c) => c.contentType === "SRT_KO");
-    if (srtKoForText?.content) {
-      narrationText = extractSrtAllScenes(srtKoForText.content).join(" ");
-      if (narrationText) {
-        console.log(`[Remotion-TTS] SRT_KO DB 사용 (${narrationText.length}자)`);
-      }
-    }
-  }
-
+  // 3순위: SCRIPT 나레이션(KO) (구 2순위: SRT_KO DB는 1순위로 이동)
   // 3순위: SCRIPT 나레이션(KO)
   if (!narrationText) {
     const scriptContent = episode.contents.find((c) => c.contentType === "SCRIPT");
