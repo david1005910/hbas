@@ -926,15 +926,27 @@ export async function distributeHebrewForEpisode(episodeId: string): Promise<Sub
     if (episode.verseRange && episode.bibleBookId) {
       const verseHeBounds = await getVerseHebrewBoundaries(episode.bibleBookId, episode.verseRange, totalDuration);
       if (verseHeBounds && verseHeBounds.length > 0) {
-        updated = existing.map((t) => {
-          let idx = verseHeBounds.findIndex((b, i) => {
-            const isLast = i === verseHeBounds.length - 1;
-            return t.startSec >= b.startSec && (isLast || t.startSec < verseHeBounds[i + 1].startSec);
+        const verseMap = new Map(verseHeBounds.map((b) => [b.verseNum, b.hebrewText]));
+        // verseNum 필드가 있으면 직접 매핑 (TTS 타이밍과 히브리어 글자 수 비례의 불일치 방지)
+        const hasVerseNums = existing.every((t: any) => typeof (t as any).verseNum === "number");
+        if (hasVerseNums) {
+          updated = existing.map((t) => ({
+            ...t,
+            heText: verseMap.get((t as any).verseNum) ?? verseHeBounds[verseHeBounds.length - 1].hebrewText,
+          }));
+          console.log(`[Subtitle] 히브리어 배분(verseNum 직접 매핑 ${verseHeBounds.length}절→${n}개) 완료`);
+        } else {
+          // verseNum 없으면 시간 비례 fallback
+          updated = existing.map((t) => {
+            let idx = verseHeBounds.findIndex((b, i) => {
+              const isLast = i === verseHeBounds.length - 1;
+              return t.startSec >= b.startSec && (isLast || t.startSec < verseHeBounds[i + 1].startSec);
+            });
+            if (idx < 0) idx = verseHeBounds.length - 1;
+            return { ...t, heText: verseHeBounds[idx].hebrewText };
           });
-          if (idx < 0) idx = verseHeBounds.length - 1;
-          return { ...t, heText: verseHeBounds[idx].hebrewText };
-        });
-        console.log(`[Subtitle] 히브리어 배분(절 단위 ${verseHeBounds.length}절→${n}개) 완료`);
+          console.log(`[Subtitle] 히브리어 배분(시간 비례 ${verseHeBounds.length}절→${n}개) 완료`);
+        }
       } else {
         // 절 경계 없음 → 전체 텍스트를 모든 항목에 동일하게
         updated = existing.map((t) => ({ ...t, heText: cleanHebrewForDisplay(hebrewScenes[0]) }));
@@ -1402,15 +1414,25 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
       if (episode.verseRange && episode.bibleBookId) {
         const verseHeBounds = await getVerseHebrewBoundaries(episode.bibleBookId, episode.verseRange, totalDuration);
         if (verseHeBounds && verseHeBounds.length > 0) {
-          heChunks = existing.map((t) => {
-            let idx = verseHeBounds.findIndex((b, i) => {
-              const isLast = i === verseHeBounds.length - 1;
-              return t.startSec >= b.startSec && (isLast || t.startSec < verseHeBounds[i + 1].startSec);
+          const verseMap = new Map(verseHeBounds.map((b) => [b.verseNum, b.hebrewText]));
+          const hasVerseNums = existing.every((t: any) => typeof (t as any).verseNum === "number");
+          if (hasVerseNums) {
+            // verseNum 직접 매핑 — TTS 타이밍과 히브리어 글자 수 비례의 불일치 방지
+            heChunks = existing.map((t: any) =>
+              verseMap.get((t as any).verseNum) ?? verseHeBounds[verseHeBounds.length - 1].hebrewText
+            );
+            console.log(`[Subtitle] 단일씬→verseNum 직접 매핑 HE ${verseHeBounds.length}절→${n}개`);
+          } else {
+            heChunks = existing.map((t) => {
+              let idx = verseHeBounds.findIndex((b, i) => {
+                const isLast = i === verseHeBounds.length - 1;
+                return t.startSec >= b.startSec && (isLast || t.startSec < verseHeBounds[i + 1].startSec);
+              });
+              if (idx < 0) idx = verseHeBounds.length - 1;
+              return verseHeBounds[idx].hebrewText;
             });
-            if (idx < 0) idx = verseHeBounds.length - 1;
-            return verseHeBounds[idx].hebrewText;
-          });
-          console.log(`[Subtitle] 단일씬→절 단위 HE ${verseHeBounds.length}절→${n}개`);
+            console.log(`[Subtitle] 단일씬→시간 비례 HE ${verseHeBounds.length}절→${n}개`);
+          }
         } else {
           heChunks = Array(n).fill(cleanHebrewForDisplay(heScenes[0]));
         }
