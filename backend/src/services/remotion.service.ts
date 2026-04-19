@@ -1580,37 +1580,14 @@ export async function generateNarrationForRemotionPublic(
     console.log(`[Remotion-TTS] 히브리어 자동 배분 (${splitHebrewByLength(episodeHebrew).length}개 라인)`);
   }
 
-  // SRT_KO 씬 텍스트를 자막 text 필드에 항상 배분 (사용자 편집 내용 보장)
-  // versePairs(BibleVerse), TTS 타이밍 어느 경로를 통했더라도 SRT_KO가 최종 반영됨
-  {
-    const srtKoContent = episode.contents.find((c) => c.contentType === "SRT_KO");
-    const koScenes = srtKoContent?.content ? extractSrtAllScenes(srtKoContent.content) : [];
-    if (koScenes.length > 0) {
-      const K = koScenes.length;
-      const nTimings = finalTimings.length;
-      if (K === 1 && nTimings > 1) {
-        // 단일씬: 전체 텍스트를 단어 단위로 분할해 나레이션 타이밍과 동기화
-        const koChunks = expandSceneToChunks(koScenes[0], nTimings, KO_CHARS_PER_LINE);
-        finalTimings = finalTimings.map((t, i) => ({
-          ...t, text: applyWordReplacements(koChunks[i] ?? "")
-        })) as typeof timings;
-        console.log(`[Remotion-TTS] SRT_KO 단어분할 한국어 자막 배분 완료 (${nTimings}개) — 사용자 편집 반영`);
-      } else {
-        const koSegDur = narrationDuration / K;
-        finalTimings = finalTimings.map((t) => {
-          const sIdx = koSegDur > 0 ? Math.min(Math.floor(t.startSec / koSegDur), K - 1) : 0;
-          return { ...t, text: applyWordReplacements(koScenes[sIdx] ?? "") };
-        }) as typeof timings;
-        console.log(`[Remotion-TTS] SRT_KO 씬 기반 한국어 자막 배분 완료 (${K}씬) — 사용자 편집 반영`);
-      }
-    } else {
-      // SRT_KO 없으면 기존 text에 단어 치환만 적용
-      finalTimings = finalTimings.map((t) => ({
-        ...t,
-        text: applyWordReplacements(t.text),
-      }));
-    }
-  }
+  // TTS 분절 텍스트에 단어 치환만 적용 — 타이밍은 TTS 기반 그대로 유지
+  // TTS가 이미 실제 음성 시간에 맞는 text/startSec/endSec를 생성했으므로
+  // SRT_KO 청크로 덮어쓰면 나레이션 음성과 자막 타이밍이 어긋남
+  finalTimings = finalTimings.map((t) => ({
+    ...t,
+    text: applyWordReplacements(t.text),
+  })) as typeof timings;
+  console.log(`[Remotion-TTS] TTS 타이밍 기반 한국어 자막 유지 (${finalTimings.length}개) — 나레이션 동기화`);
 
   // ── SRT_HE 있으면 씬 기반 히브리어 재배분 (씬 전체 텍스트 배분) ──────────────────
   // TTS 생성 직후 히브리어를 SRT_HE 씬 단위로 정확히 배분 (sub-phrase 분할 없음)
