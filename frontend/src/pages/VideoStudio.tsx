@@ -1843,34 +1843,6 @@ export function VideoStudio() {
                     새로고침
                   </button>
                   {selectedEpisodeId && (
-                    <>
-                      <button
-                        onClick={handleAutoFillHebrew}
-                        title="SRT_HE에서 히브리어 자막 자동 배분"
-                        className="flex items-center gap-1 text-xs text-amber-400/70 hover:text-amber-300 transition-colors px-2 py-1.5 border border-amber-500/20 rounded-lg"
-                        style={{ background: "rgba(120,80,0,0.15)" }}
-                      >
-                        🔤 히브리어 자동 배분
-                      </button>
-                      <button
-                        onClick={handleAutoFillKorean}
-                        title="SRT_KO에서 한국어 자막 자동 배분"
-                        className="flex items-center gap-1 text-xs text-amber-300/70 hover:text-amber-200 transition-colors px-2 py-1.5 border border-amber-400/20 rounded-lg"
-                        style={{ background: "rgba(180,120,0,0.12)" }}
-                      >
-                        🇰🇷 한국어 자동 배분
-                      </button>
-                      <button
-                        onClick={handleAutoFillEnglish}
-                        title="SRT_EN에서 영어 자막 자동 배분"
-                        className="flex items-center gap-1 text-xs text-blue-300/70 hover:text-blue-200 transition-colors px-2 py-1.5 border border-blue-400/20 rounded-lg"
-                        style={{ background: "rgba(30,80,200,0.12)" }}
-                      >
-                        🇺🇸 영어 자동 배분
-                      </button>
-                    </>
-                  )}
-                  {selectedEpisodeId && (
                     <button
                       onClick={handleSyncAllSubtitles}
                       disabled={subtitleLoading}
