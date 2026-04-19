@@ -1596,35 +1596,38 @@ export async function generateNarrationForRemotionPublic(
   // 히브리어 텍스트 미리 조회
   const episodeHebrew = await fetchEpisodeHebrew(episode as any);
 
-  // 구절 기반 자막 페어 우선 시도 (BibleVerse.koreanText가 실제로 있을 때만 사용)
-  // koreanText가 없으면 TTS 타이밍(실제 읽힌 한국어 구문)을 그대로 유지
+  // TTS timings를 항상 기준으로 유지 (한국어 text = 실제 나레이션 음성과 일치)
+  // BibleVerse 기반 자막으로 절대 대체하지 않음 — 대체하면 음성과 자막 텍스트 불일치 발생
   let finalTimings: typeof timings = timings;
-  if (episode.verseRange) {
-    const versePairs = await buildVerseSubtitlePairs(
+
+  // 절 범위가 있으면 TTS 타이밍 각 항목에 verseNum + heText 할당
+  // (Korean text는 TTS 그대로 유지, 히브리어만 절 기반으로 배분)
+  if (episode.verseRange && episode.bibleBookId) {
+    const verseHeBounds = await getVerseHebrewBoundaries(
       episode.bibleBookId,
       episode.verseRange,
       narrationDuration
     );
-    // 절 기반은 한국어 번역이 충분히 있을 때만 사용 (80% 이상 절에 한국어 있어야 함)
-    // some()만 체크하면 3/31절만 있어도 통과 → 대부분 항목이 빈 한국어로 채워지는 버그 방지
-    const pairsWithKorean = versePairs.filter((p) => p.text && p.text.trim()).length;
-    const hasPairKorean = versePairs.length > 0 && pairsWithKorean / versePairs.length >= 0.8;
-    if (versePairs.length > 0 && hasPairKorean) {
-      finalTimings = versePairs as typeof timings;
-      console.log(`[Remotion-TTS] 구절 기반 자막 ${versePairs.length}개 사용 (BibleVerse 한국어 있음)`);
-    } else if (versePairs.length > 0) {
-      // 한국어 없지만 히브리어는 있음 → TTS 타이밍 유지 + heText만 절 기반으로 보완
-      const heMap = new Map<number, string>(
-        versePairs.map((p, i) => [i, p.heText] as [number, string])
-      );
-      const heTotal = versePairs[versePairs.length - 1]?.endSec ?? narrationDuration;
+    if (verseHeBounds && verseHeBounds.length > 0) {
+      finalTimings = timings.map((t) => {
+        let idx = verseHeBounds.findIndex((b, i) => {
+          const isLast = i === verseHeBounds.length - 1;
+          return t.startSec >= b.startSec && (isLast || t.startSec < verseHeBounds[i + 1].startSec);
+        });
+        if (idx < 0) idx = verseHeBounds.length - 1;
+        return {
+          ...t,
+          heText: verseHeBounds[idx].hebrewText,
+          verseNum: verseHeBounds[idx].verseNum,
+        };
+      }) as typeof timings;
+      console.log(`[Remotion-TTS] TTS 타이밍 유지 + 절 기반 히브리어 배분 완료 (${verseHeBounds.length}절, ${finalTimings.length}항목)`);
+    } else if (episodeHebrew) {
       finalTimings = distributeHebrewToTimings(timings, episodeHebrew, narrationDuration);
-      console.log(`[Remotion-TTS] BibleVerse 한국어 없음 → TTS 타이밍 유지, 히브리어만 배분`);
+      console.log(`[Remotion-TTS] 절 경계 없음 → 히브리어 균등 배분`);
     }
-  }
-
-  // verseRange 없거나 위에서 finalTimings가 timings 그대로면 히브리어만 배분
-  if (finalTimings === timings && episodeHebrew) {
+  } else if (episodeHebrew) {
+    // verseRange 없으면 히브리어 전체를 균등 배분
     finalTimings = distributeHebrewToTimings(timings, episodeHebrew, narrationDuration);
     console.log(`[Remotion-TTS] 히브리어 자동 배분 (${splitHebrewByLength(episodeHebrew).length}개 라인)`);
   }
@@ -1638,32 +1641,15 @@ export async function generateNarrationForRemotionPublic(
   })) as typeof timings;
   console.log(`[Remotion-TTS] TTS 타이밍 기반 한국어 자막 유지 (${finalTimings.length}개) — 나레이션 동기화`);
 
-  // ── SRT_HE 있으면 씬 기반 히브리어 재배분 (씬 전체 텍스트 배분) ──────────────────
-  // TTS 생성 직후 히브리어를 SRT_HE 씬 단위로 정확히 배분 (sub-phrase 분할 없음)
-  const srtHeForNarr = episode.contents.find((c) => c.contentType === "SRT_HE");
-  if (srtHeForNarr?.content) {
-    const heNarrScenes = extractSrtAllScenes(srtHeForNarr.content);
-    if (heNarrScenes.length > 0) {
-      const HN = heNarrScenes.length;
-      if (HN === 1 && episode.verseRange && episode.bibleBookId) {
-        // 단일씬 + verseRange 있음 → 절 단위로 히브리어 배분 (각 절의 원문 전체)
-        const verseHeBounds = await getVerseHebrewBoundaries(episode.bibleBookId, episode.verseRange, narrationDuration);
-        if (verseHeBounds && verseHeBounds.length > 0) {
-          finalTimings = finalTimings.map((t) => {
-            let idx = verseHeBounds.findIndex((b, i) => {
-              const isLast = i === verseHeBounds.length - 1;
-              return t.startSec >= b.startSec && (isLast || t.startSec < verseHeBounds[i + 1].startSec);
-            });
-            if (idx < 0) idx = verseHeBounds.length - 1;
-            return { ...t, heText: verseHeBounds[idx].hebrewText };
-          }) as typeof timings;
-          console.log(`[Remotion-TTS] SRT_HE 절 단위 히브리어 배분 완료 (${verseHeBounds.length}절)`);
-        } else {
-          // 절 경계를 구할 수 없으면 단일 씬 텍스트 그대로
-          finalTimings = finalTimings.map((t) => ({ ...t, heText: heNarrScenes[0] })) as typeof timings;
-          console.log(`[Remotion-TTS] SRT_HE 단일씬 히브리어 배분 (절 경계 없음)`);
-        }
-      } else {
+  // ── SRT_HE 씬 기반 히브리어 재배분 (verseNum이 없을 때만) ──────────────────────
+  // verseNum이 이미 설정된 경우 위에서 heText도 올바르게 배분됐으므로 건너뜀
+  const heAlreadyDistributed = finalTimings.every((t: any) => typeof (t as any).verseNum === "number");
+  if (!heAlreadyDistributed) {
+    const srtHeForNarr = episode.contents.find((c) => c.contentType === "SRT_HE");
+    if (srtHeForNarr?.content) {
+      const heNarrScenes = extractSrtAllScenes(srtHeForNarr.content);
+      if (heNarrScenes.length > 0) {
+        const HN = heNarrScenes.length;
         const heNarrSegDur = narrationDuration / HN;
         finalTimings = finalTimings.map((t) => {
           const sIdx = heNarrSegDur > 0 ? Math.min(Math.floor(t.startSec / heNarrSegDur), HN - 1) : 0;
@@ -1672,6 +1658,8 @@ export async function generateNarrationForRemotionPublic(
         console.log(`[Remotion-TTS] SRT_HE 씬 기반 히브리어 재배분 완료 (${HN}씬)`);
       }
     }
+  } else {
+    console.log(`[Remotion-TTS] verseNum 기반 히브리어 배분 완료 → SRT_HE 재배분 건너뜀`);
   }
 
   // ── SRT_EN 있으면 씬 기반 영어 자막 자동 배분 (enText) ──────────────────────────
