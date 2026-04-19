@@ -509,10 +509,30 @@ export async function fetchVersesForRange(
       verseEnd = parseInt(match[4]);
     }
 
-    const verses = await prisma.bibleVerse.findMany({
-      where: { bookId, chapter, verse: { gte: verseStart, lte: verseEnd } },
-      orderBy: { verse: "asc" },
-    });
+    // 크로스-챕터 범위 처리 (예: "1:1-2:3" → 챕터1:절1 ~ 챕터2:절3)
+    const endChapter = match[3] ? parseInt(match[3]) : chapter;
+
+    let verses;
+    if (endChapter !== chapter) {
+      verses = await prisma.bibleVerse.findMany({
+        where: {
+          bookId,
+          OR: [
+            { chapter, verse: { gte: verseStart } },
+            ...(endChapter - chapter > 1
+              ? [{ chapter: { gt: chapter, lt: endChapter } }]
+              : []),
+            { chapter: endChapter, verse: { lte: verseEnd } },
+          ],
+        },
+        orderBy: [{ chapter: "asc" }, { verse: "asc" }],
+      });
+    } else {
+      verses = await prisma.bibleVerse.findMany({
+        where: { bookId, chapter, verse: { gte: verseStart, lte: verseEnd } },
+        orderBy: { verse: "asc" },
+      });
+    }
 
     return verses.map((v) => ({
       hebrewText: cleanHebrewForDisplay(v.hebrewText),
@@ -1003,11 +1023,27 @@ async function getVerseHebrewBoundaries(
       verseStart = parseInt(match[2]);
       verseEnd = parseInt(match[4]);
     }
+    const endChapter = match[3] ? parseInt(match[3]) : chapter;
 
-    const verses = await prisma.bibleVerse.findMany({
-      where: { bookId, chapter, verse: { gte: verseStart, lte: verseEnd } },
-      orderBy: { verse: "asc" },
-    });
+    let verses;
+    if (endChapter !== chapter) {
+      verses = await prisma.bibleVerse.findMany({
+        where: {
+          bookId,
+          OR: [
+            { chapter, verse: { gte: verseStart } },
+            ...(endChapter - chapter > 1 ? [{ chapter: { gt: chapter, lt: endChapter } }] : []),
+            { chapter: endChapter, verse: { lte: verseEnd } },
+          ],
+        },
+        orderBy: [{ chapter: "asc" }, { verse: "asc" }],
+      });
+    } else {
+      verses = await prisma.bibleVerse.findMany({
+        where: { bookId, chapter, verse: { gte: verseStart, lte: verseEnd } },
+        orderBy: { verse: "asc" },
+      });
+    }
     if (verses.length === 0) return null;
 
     // 히브리어 자음 수 비례로 각 절의 시간 배분
@@ -1056,11 +1092,27 @@ async function getVerseTimeBoundaries(
       verseStart = parseInt(match[2]);
       verseEnd = parseInt(match[4]);
     }
+    const endChapter = match[3] ? parseInt(match[3]) : chapter;
 
-    const verses = await prisma.bibleVerse.findMany({
-      where: { bookId, chapter, verse: { gte: verseStart, lte: verseEnd } },
-      orderBy: { verse: "asc" },
-    });
+    let verses;
+    if (endChapter !== chapter) {
+      verses = await prisma.bibleVerse.findMany({
+        where: {
+          bookId,
+          OR: [
+            { chapter, verse: { gte: verseStart } },
+            ...(endChapter - chapter > 1 ? [{ chapter: { gt: chapter, lt: endChapter } }] : []),
+            { chapter: endChapter, verse: { lte: verseEnd } },
+          ],
+        },
+        orderBy: [{ chapter: "asc" }, { verse: "asc" }],
+      });
+    } else {
+      verses = await prisma.bibleVerse.findMany({
+        where: { bookId, chapter, verse: { gte: verseStart, lte: verseEnd } },
+        orderBy: { verse: "asc" },
+      });
+    }
     if (verses.length === 0) return null;
 
     // 히브리어 자음 수 비례로 각 절의 시간 배분
