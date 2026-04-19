@@ -33,6 +33,16 @@ export interface RemotionProps {
 export function writeProps(props: RemotionProps, durationInFrames?: number): void {
   // 1. data.json 업데이트 (CLI 렌더링용) — subtitlesJson 포함해야 렌더 영상에 자막 반영됨
   const dataPath = path.join(PROJECT_PATH, "public", "data.json");
+
+  // BGM 설정은 명시적으로 전달되지 않은 경우 기존 data.json 값을 유지 (에피소드 갱신 시 BGM 초기화 방지)
+  const existingProps = readProps();
+  const bgmFileName = props.bgmFileName !== undefined
+    ? props.bgmFileName
+    : (existingProps?.bgmFileName ?? "");
+  const bgmVolume = props.bgmVolume !== undefined
+    ? props.bgmVolume
+    : (existingProps?.bgmVolume ?? 0.15);
+
   const payload: Record<string, unknown> = {
     koreanText: props.koreanText,
     hebrewText: props.hebrewText,
@@ -43,14 +53,15 @@ export function writeProps(props: RemotionProps, durationInFrames?: number): voi
     subtitlesJson: props.subtitlesJson ?? "",
     showSubtitle: props.showSubtitle ?? true,
     showNarration: props.showNarration ?? true,
-    bgmFileName: props.bgmFileName ?? "",
-    bgmVolume: props.bgmVolume ?? 0.15,
+    bgmFileName,
+    bgmVolume,
   };
   if (props.episodeId) payload.episodeId = props.episodeId;
   fs.writeFileSync(dataPath, JSON.stringify(payload, null, 2), "utf-8");
 
   // 2. Root.tsx defaultProps 업데이트 → Remotion Studio 핫-리로드 트리거
-  updateRootDefaultProps(props, durationInFrames);
+  //    (bgmFileName/bgmVolume은 위에서 resolve된 값을 그대로 전달)
+  updateRootDefaultProps({ ...props, bgmFileName, bgmVolume }, durationInFrames);
 }
 
 function updateRootDefaultProps(props: RemotionProps, durationInFrames = 150): void {
