@@ -86,6 +86,7 @@ services:
       # 소스 코드만 마운트 (node_modules는 이미지에 유지 — Chrome 포함)
       - /Users/david/Documents/my-video-project/my-video/src:/app/src
       - /Users/david/Documents/my-video-project/my-video/public:/app/public
+      - /Users/david/Documents/my-video-project/my-video/out:/app/out
       - /Users/david/Documents/my-video-project/my-video/render-server.mjs:/app/render-server.mjs
       - /Users/david/Documents/my-video-project/my-video/remotion.config.ts:/app/remotion.config.ts
       - /Users/david/Documents/my-video-project/my-video/tsconfig.json:/app/tsconfig.json
