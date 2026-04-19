@@ -58,13 +58,16 @@ export async function uploadBgm(req: Request, res: Response, next: NextFunction)
       }
     }
 
-    const bgmUrl = req.file.path.replace("/app", "");
+    // path → bgmUrl: "/app/storage/bgm/..." → "/storage/bgm/..."
+    const bgmUrl = req.file.path.startsWith("/app")
+      ? req.file.path.slice(4)
+      : req.file.path;
     const updated = await prisma.episode.update({
       where: { id: req.params.id },
       data: { bgmUrl },
     });
 
-    console.log(`[BGM] 업로드 완료: episodeId=${req.params.id}, file=${req.file.filename}, size=${req.file.size}bytes`);
+    console.log(`[BGM] 업로드 완료: episodeId=${req.params.id}, file=${req.file.filename}, size=${req.file.size}bytes, bgmUrl=${bgmUrl}`);
     res.json({
       message: "BGM 업로드 완료",
       bgmUrl: updated.bgmUrl,
@@ -89,6 +92,8 @@ export async function getBgmInfo(req: Request, res: Response, next: NextFunction
     const defaultBgm = process.env.BGM_PATH || "/app/storage/bgm/gregorian.mp3";
     const activePath = episode.bgmUrl ? `/app${episode.bgmUrl}` : defaultBgm;
     const exists = fs.existsSync(activePath);
+
+    console.log(`[BGM] info: episodeId=${req.params.id}, bgmUrl=${episode.bgmUrl}, activePath=${activePath}, exists=${exists}`);
 
     res.json({
       bgmUrl: episode.bgmUrl ?? null,

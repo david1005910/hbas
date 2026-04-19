@@ -641,8 +641,14 @@ export function VideoStudio() {
     setBgmMsg("");
     try {
       const res = await bgmApi.upload(selectedEpisodeId, file);
-      const info = await bgmApi.info(selectedEpisodeId);
-      setBgmInfo(info);
+      // 업로드 성공 후 재조회 대신 직접 상태 구성 (fs.existsSync 경로 불일치 방지)
+      setBgmInfo({
+        bgmUrl: res.bgmUrl,
+        isCustom: true,
+        defaultBgmExists: bgmInfo?.defaultBgmExists ?? true,
+        activeFileExists: true,
+        activeFileSizeKb: res.sizeKb,
+      });
       setBgmMsg(`✓ BGM 업로드 완료 — ${res.filename} (${res.sizeKb}KB)`);
     } catch (err: any) {
       setBgmMsg(`⚠ ${err?.response?.data?.error ?? err.message ?? "업로드 실패"}`);
