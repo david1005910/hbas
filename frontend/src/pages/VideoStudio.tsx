@@ -713,11 +713,15 @@ export function VideoStudio() {
   async function handleBgmVolumeChange(vol: number) {
     setBgmVolume(vol);
     try {
-      await fetch(`/api/v1/remotion/bgm/volume`, {
+      const res = await fetch(`/api/v1/remotion/bgm/volume`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bgmVolume: vol / 100 }),
       });
+      if (res.ok) {
+        // 음량 변경 후 미리보기 iframe 새로고침
+        setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 300);
+      }
     } catch { /* 무시 */ }
   }
 
