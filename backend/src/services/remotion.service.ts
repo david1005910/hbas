@@ -1458,17 +1458,28 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
     }
   }
 
+  // non-singleScene 경로에서도 씬별 expandSceneToChunks 적용
+  // → 같은 씬에 속하는 항목들이 전체 단락 텍스트를 동일하게 갖는 문제 방지
+  if (!singleScene && koScenes.length > 0) {
+    const sceneGroups: number[][] = Array.from({ length: koScenes.length }, () => []);
+    existing.forEach((t, idx) => {
+      const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), koScenes.length - 1) : 0;
+      if (sceneGroups[sIdx]) sceneGroups[sIdx].push(idx);
+    });
+    koChunks = new Array(n).fill("");
+    sceneGroups.forEach((indices, sceneIdx) => {
+      const chunks = expandSceneToChunks(koScenes[sceneIdx] ?? "", indices.length, KO_CHARS_PER_LINE);
+      indices.forEach((entryIdx, chunkIdx) => {
+        koChunks![entryIdx] = applyWordReplacements(chunks[chunkIdx] ?? "");
+      });
+    });
+    console.log(`[Subtitle] non-singleScene 씬별 KO 청크 분할: ${koScenes.length}씬 → ${n}개`);
+  }
+
   const updated: SubtitleTiming[] = existing.map((t, i) => {
     const entry: SubtitleTiming = { ...t };
     if (koChunks) {
       entry.text = applyWordReplacements(koChunks[i] ?? "");
-    } else if (koScenes.length > 0) {
-      // TTS로 이미 텍스트가 설정된 경우 덮어쓰지 않음 (TTS 단어 단위 자막 보존)
-      if (!entry.text) {
-        const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), koScenes.length - 1) : 0;
-        entry.text = applyWordReplacements(koScenes[sIdx] ?? "");
-      }
-    }
     if (heChunks) {
       entry.heText = heChunks[i] ?? "";
     } else if (heScenes.length > 0) {

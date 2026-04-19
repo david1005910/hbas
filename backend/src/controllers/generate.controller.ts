@@ -181,7 +181,15 @@ export async function generateSrt(req: Request, res: Response, next: NextFunctio
         timings = distributeTiming(sceneCount, episode.targetDuration ?? 300);
         versePerScene = Math.ceil(dbVerses.length / sceneCount);
         const heEntries = Array.from({ length: sceneCount }, (_, i) => {
-          const chunk = dbVerses.slice(i * versePerScene, (i + 1) * versePerScene);
+          let chunk: typeof dbVerses;
+          if (dbVerses.length >= sceneCount) {
+            // 절 수 ≥ 씬 수: 균등 분할
+            chunk = dbVerses.slice(i * versePerScene, (i + 1) * versePerScene);
+          } else {
+            // 절 수 < 씬 수: 비례 배분으로 빈 씬 방지 (절을 씬에 걸쳐 반복 배치)
+            const vIdx = Math.min(Math.floor(i * dbVerses.length / sceneCount), dbVerses.length - 1);
+            chunk = [dbVerses[vIdx]];
+          }
           return {
             index: i + 1,
             startSec: timings[i]?.startSec ?? i * 10,
@@ -190,7 +198,7 @@ export async function generateSrt(req: Request, res: Response, next: NextFunctio
           };
         });
         dbHebrewSrt = addUtf8Bom(buildSrtContent(heEntries, true));
-        console.log(`[SRT] BibleVerse DB에서 히브리어 원문 ${dbVerses.length}절 로드 완료 → SRT_HE 직접 생성`);
+        console.log(`[SRT] BibleVerse DB에서 히브리어 원문 ${dbVerses.length}절 로드 완료 → SRT_HE ${sceneCount}씬 직접 생성`);
       }
     }
 
