@@ -1405,19 +1405,14 @@ export async function distributeEnglishForEpisode(episodeId: string): Promise<Su
  * 단일 씬 텍스트를 n개 항목에 단어 단위로 균등 분할 (≤maxChars 기준)
  * sceneCount=1인 경우 전체 텍스트가 한 항목에 몰리는 것을 방지해 나레이션 타이밍과 동기화
  */
-function expandSceneToChunks(text: string, n: number, maxChars: number): string[] {
+function expandSceneToChunks(text: string, n: number, _maxChars: number): string[] {
   if (!text || n <= 0) return Array(n).fill("");
   const words = text.split(/\s+/).filter(Boolean);
   if (words.length === 0) return Array(n).fill("");
   return Array.from({ length: n }, (_, i) => {
     const start = Math.floor(i * words.length / n);
     const end = Math.floor((i + 1) * words.length / n);
-    const chunk = words.slice(start, Math.max(end, start + 1)).join(" ");
-    if (chunk.length > maxChars) {
-      const spaceIdx = chunk.lastIndexOf(" ", maxChars);
-      return (spaceIdx > maxChars / 2 ? chunk.slice(0, spaceIdx) : chunk.slice(0, maxChars)).trim();
-    }
-    return chunk.trim();
+    return words.slice(start, Math.max(end, start + 1)).join(" ").trim();
   });
 }
 
