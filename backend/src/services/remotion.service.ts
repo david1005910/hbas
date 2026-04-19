@@ -1841,7 +1841,8 @@ export async function applyBgmToRemotionPublic(
   fs.mkdirSync(destDir, { recursive: true });
   fs.copyFileSync(sourcePath, path.join(destDir, bgmFileName));
 
-  const vol = Math.max(0, Math.min(1, bgmVolume));
+  // 최소 볼륨 0.10 보장 (너무 낮으면 무음으로 들림)
+  const vol = Math.max(0.10, Math.min(1, bgmVolume));
   const currentProps = readProps();
   writeProps(
     { ...(currentProps ?? { koreanText: "", hebrewText: "" }), bgmFileName, bgmVolume: vol },
@@ -1856,7 +1857,7 @@ export async function applyBgmToRemotionPublic(
  * BGM 음량만 업데이트 (파일 복사 없이 props만 변경)
  */
 export function updateBgmVolume(bgmVolume: number): void {
-  const vol = Math.max(0, Math.min(1, bgmVolume));
+  const vol = Math.max(0.10, Math.min(1, bgmVolume));
   const currentProps = readProps();
   writeProps(
     { ...(currentProps ?? { koreanText: "", hebrewText: "" }), bgmVolume: vol },

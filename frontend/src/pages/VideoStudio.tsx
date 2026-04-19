@@ -69,7 +69,7 @@ export function VideoStudio() {
   const [bgmInfo, setBgmInfo] = useState<BgmInfo | null>(null);
   const [bgmUploading, setBgmUploading] = useState(false);
   const [bgmMsg, setBgmMsg] = useState("");
-  const [bgmVolume, setBgmVolume] = useState(15); // 0~100 (%)
+  const [bgmVolume, setBgmVolume] = useState(20); // 0~100 (%), 최소 10% 이상 권장
   const bgmInputRef = useRef<HTMLInputElement>(null);
   // 씬 선택
   const [selectedSceneNumber, setSelectedSceneNumber] = useState<number | null>(null);
@@ -692,6 +692,11 @@ export function VideoStudio() {
     } finally {
       setBgmUploading(false);
     }
+  }
+
+  // 슬라이더 드래그 중에는 UI만 업데이트, 손을 뗄 때만 서버에 전송
+  function handleBgmVolumeInput(vol: number) {
+    setBgmVolume(vol);
   }
 
   async function handleBgmVolumeChange(vol: number) {
@@ -1403,11 +1408,13 @@ export function VideoStudio() {
                   </div>
                   <input
                     type="range"
-                    min={0}
+                    min={10}
                     max={100}
                     step={5}
                     value={bgmVolume}
-                    onChange={(e) => handleBgmVolumeChange(Number(e.target.value))}
+                    onChange={(e) => handleBgmVolumeInput(Number(e.target.value))}
+                    onMouseUp={(e) => handleBgmVolumeChange(Number((e.target as HTMLInputElement).value))}
+                    onTouchEnd={(e) => handleBgmVolumeChange(Number((e.target as HTMLInputElement).value))}
                     className="w-full accent-amber-400"
                   />
                 </div>
