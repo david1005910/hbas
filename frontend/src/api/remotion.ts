@@ -76,9 +76,10 @@ export const remotionApi = {
     ).then((r) => r.data),
 
   // 한국어 나레이션 TTS 생성 → public/narration.mp3
-  generateNarration: (episodeId: string, speakingRate?: number) =>
+  // narrationText: 자막 편집기의 현재 한국어 텍스트 (최우선 적용)
+  generateNarration: (episodeId: string, speakingRate?: number, narrationText?: string) =>
     api.post<{ success: boolean; fileName: string; textLength: number; durationSec?: number; durationInFrames?: number; subtitlesJson?: string }>(
-      "/remotion/generate-narration", { episodeId, speakingRate }
+      "/remotion/generate-narration", { episodeId, speakingRate, narrationText }
     ).then((r) => r.data),
 
   // 영어 나레이션 TTS 생성 → public/narration_en.mp3
@@ -106,6 +107,10 @@ export const remotionApi = {
   // 기존 자막에 한국어(SRT_KO) 자동 배분
   autoFillKorean: (episodeId: string) =>
     api.post<{ subtitles: SubEntry[] }>("/remotion/subtitles/auto-korean", { episodeId }).then((r) => r.data.subtitles),
+
+  // HE+KO+EN 3종 동시 배분 (씬 경계 완전 일치 — 히브리어·한국어·영어 정렬 보장)
+  syncAllSubtitles: (episodeId: string) =>
+    api.post<{ subtitles: SubEntry[] }>("/remotion/subtitles/sync-all", { episodeId }).then((r) => r.data.subtitles),
 
   // 단어 치환 규칙 조회
   getWordReplacements: () =>

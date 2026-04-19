@@ -22,7 +22,8 @@ export interface SrtEntry {
 export function buildSrtContent(entries: SrtEntry[], isHebrew = false): string {
   return entries
     .map((e) => {
-      const text = isHebrew ? wrapHebrew(e.text) : e.text;
+      // 빈 히브리어 텍스트는 wrapHebrew 처리 안 함 (빈 문자열에 wrapHebrew 적용 시 \u202B\u202C만 남아 잘못된 heText 생성됨)
+      const text = isHebrew ? (e.text ? wrapHebrew(e.text) : "") : e.text;
       return `${e.index}\n${secondsToSrtTime(e.startSec)} --> ${secondsToSrtTime(e.endSec)}\n${text}\n`;
     })
     .join("\n");

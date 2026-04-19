@@ -18,6 +18,7 @@ import {
   distributeHebrewForEpisode,
   distributeEnglishForEpisode,
   distributeKoreanForEpisode,
+  syncAllSubtitlesForEpisode,
   extractAllEnglishNarration,
   PROJECT_PATH,
 } from "../services/remotion.service";
@@ -35,6 +36,16 @@ import {
 import { studioChat } from "../services/studioChat.service";
 import { prisma } from "../config/database";
 import { getMediaDuration } from "../services/ffmpeg.service";
+
+/** 초 → SRT 타임코드 (00:00:00,000) */
+function toSrtTime(sec: number): string {
+  const s = Math.max(0, sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = Math.floor(s % 60);
+  const ms = Math.round((s % 1) * 1000);
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")},${String(ms).padStart(3,"0")}`;
+}
 
 // multer 공통 storage (Remotion public/ 에 직접 저장)
 const publicStorage = multer.diskStorage({
@@ -81,10 +92,11 @@ router.get("/props", (_req: Request, res: Response) => {
 // POST /api/v1/remotion/props — data.json 업데이트
 router.post("/props", (req: Request, res: Response) => {
   try {
-    const { koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId, showSubtitle, showNarration } =
-      req.body;
-    // koreanText/hebrewText는 선택 — 키프레임 전송 시 비어있을 수 있음
-    const subtitlesJson = readCurrentSubtitlesJson();
+    const { koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId,
+      showSubtitle, showNarration, subtitlesJson: bodySubtitlesJson } = req.body;
+    // 클라이언트가 subtitlesJson을 명시적으로 보내면 우선 사용 (씬 선택 시 씬별 자막 주입)
+    // 그렇지 않으면 저장된 subtitles.json 파일에서 읽음
+    const subtitlesJson = bodySubtitlesJson !== undefined ? bodySubtitlesJson : readCurrentSubtitlesJson();
     const currentDuration = readDurationInFrames();
     writeProps(
       { koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId, subtitlesJson,
@@ -181,10 +193,11 @@ router.post("/upload-audio", audioUpload.single("audio"), (req: Request, res: Re
 // POST /api/v1/remotion/generate-narration — 한국어 나레이션 TTS 생성 → public/narration.mp3
 router.post("/generate-narration", async (req: Request, res: Response) => {
   try {
-    const { episodeId, speakingRate } = req.body;
+    const { episodeId, speakingRate, narrationText } = req.body;
     if (!episodeId) return res.status(400).json({ error: "episodeId 필수" });
     const rate = speakingRate !== undefined ? Number(speakingRate) : undefined;
-    const result = await generateNarrationForRemotionPublic(episodeId, rate);
+    const overrideText = typeof narrationText === "string" && narrationText.trim() ? narrationText.trim() : undefined;
+    const result = await generateNarrationForRemotionPublic(episodeId, rate, overrideText);
     res.json({ success: true, ...result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -240,16 +253,21 @@ router.get("/subtitles", (_req: Request, res: Response) => {
   }
 });
 
-// POST /api/v1/remotion/subtitles — 자막 편집 후 저장 → Root.tsx + subtitles.json 업데이트
-router.post("/subtitles", (req: Request, res: Response) => {
+// POST /api/v1/remotion/subtitles — 자막 편집 후 저장 → Root.tsx + subtitles.json + SRT_KO DB 업데이트
+router.post("/subtitles", async (req: Request, res: Response) => {
   try {
     const { subtitles } = req.body;
     if (!Array.isArray(subtitles)) return res.status(400).json({ error: "subtitles 배열 필수" });
 
-    // 한국어 자막 텍스트에 단어 치환 적용 (저장 전)
+    // 한국어 자막 텍스트에 단어 치환 적용 + heText 빈 RTL 래퍼 정리 (저장 전)
+    const isEmptyHe = (v: unknown) =>
+      typeof v === "string" &&
+      v.replace(/[\u202A-\u202E\u200B-\u200F\uFEFF\u00A0\s]/g, "").length === 0;
+
     const applied = subtitles.map((s: any) => ({
       ...s,
       text: typeof s.text === "string" ? applyWordReplacements(s.text) : s.text,
+      heText: isEmptyHe(s.heText) ? "" : s.heText,
     }));
 
     const subtitlesJson = JSON.stringify(applied);
@@ -265,6 +283,41 @@ router.post("/subtitles", (req: Request, res: Response) => {
       { ...(current ?? { koreanText: "", hebrewText: "" }), subtitlesJson },
       currentDuration
     );
+
+    // SRT_KO DB도 업데이트 → 나레이션 생성 시 편집 내용 반영
+    // episodeId는 current props에서 가져옴 (프론트에서 별도로 보내지 않아도 됨)
+    const episodeId = current?.episodeId;
+    if (episodeId) {
+      try {
+        // 연속 중복 제거 → 씬별 고유 한국어 텍스트 추출
+        const uniqueTexts: string[] = [];
+        for (const s of applied) {
+          const t = (s.text ?? "").trim();
+          if (t && (uniqueTexts.length === 0 || t !== uniqueTexts[uniqueTexts.length - 1])) {
+            uniqueTexts.push(t);
+          }
+        }
+        if (uniqueTexts.length > 0) {
+          // 기존 SRT_KO 타임코드 재활용 (타이밍은 원본 유지, 텍스트만 교체)
+          const totalDur = applied[applied.length - 1]?.endSec ?? (uniqueTexts.length * 10);
+          const perScene = totalDur / uniqueTexts.length;
+          const srtLines = uniqueTexts.map((text, i) =>
+            `${i + 1}\n${toSrtTime(i * perScene)} --> ${toSrtTime((i + 1) * perScene - 0.5)}\n${text}\n`
+          ).join("\n");
+
+          await prisma.generatedContent.deleteMany({
+            where: { episodeId, contentType: "SRT_KO" as any },
+          });
+          await prisma.generatedContent.create({
+            data: { episodeId, contentType: "SRT_KO" as any, content: srtLines, aiModel: "user-edit" },
+          });
+          console.log(`[Subtitle-Save] SRT_KO DB 업데이트 완료 (${uniqueTexts.length}씬) — episodeId=${episodeId}`);
+        }
+      } catch (dbErr) {
+        // DB 업데이트 실패는 무시 (subtitles.json이 최우선 소스이므로 나레이션 생성에 영향 없음)
+        console.warn("[Subtitle-Save] SRT_KO DB 업데이트 실패 (무시):", (dbErr as Error).message);
+      }
+    }
 
     res.json({ success: true, count: subtitles.length });
   } catch (err: any) {
@@ -302,6 +355,18 @@ router.post("/subtitles/auto-korean", async (req: Request, res: Response) => {
     const { episodeId } = req.body;
     if (!episodeId) return res.status(400).json({ error: "episodeId 필수" });
     const subtitles = await distributeKoreanForEpisode(episodeId);
+    res.json({ subtitles });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/v1/remotion/subtitles/sync-all — HE+KO+EN 3종 동시 배분 (씬 경계 완전 일치)
+router.post("/subtitles/sync-all", async (req: Request, res: Response) => {
+  try {
+    const { episodeId } = req.body;
+    if (!episodeId) return res.status(400).json({ error: "episodeId 필수" });
+    const subtitles = await syncAllSubtitlesForEpisode(episodeId);
     res.json({ subtitles });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

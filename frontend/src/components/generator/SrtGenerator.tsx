@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { Lightbulb, Eye, EyeOff, Edit2, Check, X, Save, Loader2 } from "lucide-react";
+import { Lightbulb, Eye, EyeOff, Edit2, Check, X, Save, Loader2, RefreshCw, Mic } from "lucide-react";
 import { generateApi } from "../../api/generate";
 import { episodesApi } from "../../api/episodes";
 import { api } from "../../api/client";
+import { remotionApi } from "../../api/remotion";
 import { DownloadButton } from "../ui/DownloadButton";
 import type { GeneratedContent } from "../../types";
 
@@ -34,7 +35,7 @@ function parseSrt(srtContent: string): Array<{ num: number; time: string; text: 
 }
 
 /** 편집된 씬 텍스트 배열 + 원본 타임코드를 합쳐 SRT 문자열 재생성 */
-function rebuildSrt(scenes: Array<{ num: number; time: string }>, editedTexts: string[]): string {
+function rebuildSrt(scenes: Array<{ num: number; time: string; text: string }>, editedTexts: string[]): string {
   return scenes
     .map((s, i) => `${s.num}\n${s.time}\n${editedTexts[i] ?? s.text}`)
     .join("\n\n") + "\n";
@@ -82,6 +83,13 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
   const [editedEn, setEditedEn] = useState<string[]>([]);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState("");
+  // 저장 후 Remotion 동기화
+  const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "synced" | "error">("idle");
+  const [syncError, setSyncError] = useState("");
+  // 저장 후 나레이션 재생성
+  const [regenStatus, setRegenStatus] = useState<"idle" | "generating" | "done" | "error">("idle");
+  const [regenError, setRegenError] = useState("");
+  const [koChanged, setKoChanged] = useState(false);
 
   useEffect(() => { setSceneCount(initialSceneCount); }, [initialSceneCount]);
   useEffect(() => { if (existing.length > 0) setDone(true); }, [existing.length]);
@@ -105,6 +113,11 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
     setEditedEn(enScenes.map((s) => s.text));
     setSaveStatus("idle");
     setSaveError("");
+    setSyncStatus("idle");
+    setSyncError("");
+    setRegenStatus("idle");
+    setRegenError("");
+    setKoChanged(false);
     setEditMode(true);
   }
 
@@ -117,37 +130,88 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
   async function handleSaveEdits() {
     setSaveStatus("saving");
     setSaveError("");
+    setSyncStatus("idle");
+    setRegenStatus("idle");
+
+    // 한국어 변경 여부 감지
+    const koHasChanges = editedKo.some((t, i) => t !== (koScenes[i]?.text ?? ""));
+    setKoChanged(koHasChanges);
+
     try {
       const saves: Promise<void>[] = [];
 
+      // 글자 수 제한 없이 편집된 내용 그대로 저장 (완전한 절 번역 보존)
       if (srtKo && editedKo.length > 0) {
         const rebuilt = rebuildSrt(koScenes, editedKo);
-        saves.push(
-          api.patch(`/contents/${srtKo.id}`, { content: rebuilt }).then(() => {})
-        );
+        saves.push(api.patch(`/contents/${srtKo.id}`, { content: rebuilt }).then(() => {}));
       }
       if (srtHe && editedHe.length > 0) {
         const rebuilt = rebuildSrt(heScenes, editedHe);
-        saves.push(
-          api.patch(`/contents/${srtHe.id}`, { content: rebuilt }).then(() => {})
-        );
+        saves.push(api.patch(`/contents/${srtHe.id}`, { content: rebuilt }).then(() => {}));
       }
       if (srtEn && editedEn.length > 0) {
         const rebuilt = rebuildSrt(enScenes, editedEn);
-        saves.push(
-          api.patch(`/contents/${srtEn.id}`, { content: rebuilt }).then(() => {})
-        );
+        saves.push(api.patch(`/contents/${srtEn.id}`, { content: rebuilt }).then(() => {}));
       }
 
       await Promise.all(saves);
       setSaveStatus("saved");
       setEditMode(false);
-      // 저장 후 부모에서 데이터 다시 불러오도록
       onDone?.();
-      setTimeout(() => setSaveStatus("idle"), 3000);
+
+      // DB 저장 후 Remotion subtitles.json 동기화
+      await syncToRemotion();
     } catch (e: any) {
       setSaveError(e.message ?? "저장 실패");
       setSaveStatus("error");
+    }
+  }
+
+  /** DB에 저장된 SRT를 Remotion subtitles.json에 배분 */
+  async function syncToRemotion() {
+    setSyncStatus("syncing");
+    setSyncError("");
+    try {
+      // 한국어 배분 시도 — subtitles.json 없으면 에러 감지
+      let noSubtitleFile = false;
+      await remotionApi.autoFillKorean(episodeId).catch((e: any) => {
+        const msg: string = e?.response?.data?.error ?? e?.message ?? "";
+        if (msg.includes("subtitles.json") || msg.includes("나레이션을 먼저")) {
+          noSubtitleFile = true;
+        }
+      });
+
+      if (noSubtitleFile) {
+        // subtitles.json 없음 → 나레이션 먼저 생성해야 함
+        setSyncStatus("error");
+        setSyncError("나레이션을 먼저 생성해야 화면에 반영됩니다");
+        return;
+      }
+
+      // 히브리어·영어 배분 (에러 무시)
+      await Promise.all([
+        remotionApi.autoFillHebrew(episodeId).catch(() => {}),
+        remotionApi.autoFillEnglish(episodeId).catch(() => {}),
+      ]);
+      setSyncStatus("synced");
+    } catch (e: any) {
+      setSyncError(e.message ?? "동기화 실패");
+      setSyncStatus("error");
+    }
+  }
+
+  /** 한국어 자막 기준으로 나레이션 재생성 */
+  async function handleRegenNarration() {
+    setRegenStatus("generating");
+    setRegenError("");
+    try {
+      await remotionApi.generateNarration(episodeId);
+      setRegenStatus("done");
+      // 나레이션 생성 후 자막도 동기화
+      await syncToRemotion();
+    } catch (e: any) {
+      setRegenError(e.message ?? "나레이션 재생성 실패");
+      setRegenStatus("error");
     }
   }
 
@@ -203,13 +267,25 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
           {verseCount > 0 && <span className="text-parchment/35 text-xs font-body">({verseCount}절)</span>}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {done && (
             <button
               onClick={() => setExpanded(!expanded)}
               className="flex items-center gap-1.5 px-3 py-2 text-xs text-parchment/70 hover:text-parchment border border-parchment/20 rounded-lg transition-colors"
             >
               {expanded ? <><EyeOff size={12} /> 숨기기</> : <><Eye size={12} /> 자막 보기</>}
+            </button>
+          )}
+          {done && (
+            <button
+              onClick={syncToRemotion}
+              disabled={syncStatus === "syncing"}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs text-blue-300 border border-blue-400/30 hover:bg-blue-400/10 disabled:opacity-50 rounded-lg transition-colors"
+              title="현재 SRT를 Remotion 영상 자막에 반영"
+            >
+              {syncStatus === "syncing"
+                ? <><Loader2 size={12} className="animate-spin" /> 반영 중…</>
+                : <><RefreshCw size={12} /> 화면에 반영</>}
             </button>
           )}
           <button
@@ -289,13 +365,50 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
                   <Edit2 size={11} /> 편집
                 </button>
               )}
-              {saveStatus === "saved" && (
+              {/* 저장 상태 */}
+              {saveStatus === "saved" && syncStatus === "idle" && (
                 <span className="flex items-center gap-1 text-xs text-emerald-400">
                   <Check size={11} /> 저장됨
                 </span>
               )}
               {saveStatus === "error" && (
                 <span className="text-xs text-red-400">{saveError}</span>
+              )}
+              {/* Remotion 동기화 상태 */}
+              {syncStatus === "syncing" && (
+                <span className="flex items-center gap-1 text-xs text-blue-300">
+                  <Loader2 size={11} className="animate-spin" /> 화면 반영 중…
+                </span>
+              )}
+              {syncStatus === "synced" && regenStatus === "idle" && (
+                <span className="flex items-center gap-1 text-xs text-emerald-400">
+                  <Check size={11} /> 화면 반영됨
+                </span>
+              )}
+              {syncStatus === "error" && (
+                <span className="text-xs text-amber-400" title={syncError}>{syncError}</span>
+              )}
+              {/* 나레이션 재생성 버튼: 한국어 변경됐거나 subtitles.json 없어서 sync 실패한 경우 표시 */}
+              {(syncStatus === "synced" || syncStatus === "error") && koChanged && regenStatus === "idle" && (
+                <button
+                  onClick={handleRegenNarration}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-amber-200 border border-amber-400/40 hover:bg-amber-400/15 rounded-lg transition-colors"
+                >
+                  <Mic size={11} /> 나레이션 재생성
+                </button>
+              )}
+              {regenStatus === "generating" && (
+                <span className="flex items-center gap-1 text-xs text-amber-300">
+                  <Loader2 size={11} className="animate-spin" /> 나레이션 생성 중…
+                </span>
+              )}
+              {regenStatus === "done" && (
+                <span className="flex items-center gap-1 text-xs text-emerald-400">
+                  <Check size={11} /> 나레이션 완료
+                </span>
+              )}
+              {regenStatus === "error" && (
+                <span className="text-xs text-red-400" title={regenError}>나레이션 실패</span>
               )}
             </div>
           </div>
@@ -330,14 +443,10 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
                         <td className="px-3 py-2 text-parchment/80 max-w-[220px] align-top">
                           {editMode && ko ? (
                             <textarea
-                              rows={3}
+                              rows={4}
                               className="w-full bg-ink border border-gold/30 focus:border-gold/60 rounded-lg px-2 py-1.5 text-parchment/90 text-xs resize-none focus:outline-none leading-relaxed"
                               value={editedKo[i] ?? ko.text}
-                              onChange={(e) => {
-                                const next = [...editedKo];
-                                next[i] = e.target.value;
-                                setEditedKo(next);
-                              }}
+                              onChange={(e) => { const next = [...editedKo]; next[i] = e.target.value; setEditedKo(next); }}
                             />
                           ) : (
                             ko?.text || <span className="text-red-400/60 italic">없음</span>
@@ -348,15 +457,11 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
                         <td className="px-3 py-2 text-amber-200/80 max-w-[220px] align-top" dir="rtl">
                           {editMode && he ? (
                             <textarea
-                              rows={3}
+                              rows={4}
                               dir="rtl"
                               className="w-full bg-ink border border-amber-400/30 focus:border-amber-400/60 rounded-lg px-2 py-1.5 text-amber-200/90 text-xs resize-none focus:outline-none font-mono leading-relaxed"
                               value={editedHe[i] ?? he.text}
-                              onChange={(e) => {
-                                const next = [...editedHe];
-                                next[i] = e.target.value;
-                                setEditedHe(next);
-                              }}
+                              onChange={(e) => { const next = [...editedHe]; next[i] = e.target.value; setEditedHe(next); }}
                             />
                           ) : (
                             he?.text || <span className="text-red-400/60 italic">없음</span>
@@ -367,14 +472,10 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
                         <td className="px-3 py-2 text-blue-200/70 max-w-[220px] align-top">
                           {editMode && en ? (
                             <textarea
-                              rows={3}
+                              rows={4}
                               className="w-full bg-ink border border-blue-400/30 focus:border-blue-400/60 rounded-lg px-2 py-1.5 text-blue-200/80 text-xs resize-none focus:outline-none leading-relaxed"
                               value={editedEn[i] ?? en.text}
-                              onChange={(e) => {
-                                const next = [...editedEn];
-                                next[i] = e.target.value;
-                                setEditedEn(next);
-                              }}
+                              onChange={(e) => { const next = [...editedEn]; next[i] = e.target.value; setEditedEn(next); }}
                             />
                           ) : (
                             en?.text || <span className="text-parchment/30 italic">없음</span>

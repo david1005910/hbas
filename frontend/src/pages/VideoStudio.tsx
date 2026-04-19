@@ -144,7 +144,19 @@ export function VideoStudio() {
     setNarrationStatus("generating");
     setNarrationError("");
     try {
-      const result = await remotionApi.generateNarration(epId, narrationSpeed !== 1.0 ? narrationSpeed : undefined);
+      // 자막 편집기의 현재 한국어 텍스트를 직접 전달 (연속 중복 제거)
+      let overrideNarrationText: string | undefined;
+      if (subtitles.length > 0) {
+        const uniqueKoTexts: string[] = [];
+        for (const s of subtitles) {
+          const t = (s.text ?? "").trim();
+          if (t && (uniqueKoTexts.length === 0 || t !== uniqueKoTexts[uniqueKoTexts.length - 1])) {
+            uniqueKoTexts.push(t);
+          }
+        }
+        if (uniqueKoTexts.length > 0) overrideNarrationText = uniqueKoTexts.join(" ");
+      }
+      const result = await remotionApi.generateNarration(epId, narrationSpeed !== 1.0 ? narrationSpeed : undefined, overrideNarrationText);
       setAudioFileName(result.fileName);
       if (result.durationSec) setNarrationDuration(result.durationSec);
       // 생성된 자막 파싱 → 편집기에 로드
@@ -258,22 +270,33 @@ export function VideoStudio() {
     }
   }
 
-  // 텍스트를 maxChars 이내 단어 경계로 줄 분할 → '\n' 구분 문자열 반환
-  function splitTextAt(text: string, maxChars = 30): string {
-    if (!text) return text;
-    const words = text.replace(/\n/g, " ").split(/\s+/).filter(Boolean);
-    const lines: string[] = [];
-    let cur = "";
-    for (const w of words) {
-      if (!cur) { cur = w; }
-      else if (cur.length + 1 + w.length <= maxChars) { cur += " " + w; }
-      else { lines.push(cur); cur = w; }
+  // HE+KO+EN 3종 동시 배분 — 씬 경계 완전 일치 보장
+  async function handleSyncAllSubtitles() {
+    if (!selectedEpisodeId) return;
+    setSubtitleLoading(true);
+    setSubtitleSaveError("");
+    try {
+      const filled = await remotionApi.syncAllSubtitles(selectedEpisodeId);
+      if (filled.length > 0) {
+        setSubtitles(filled.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
+      }
+    } catch (err: any) {
+      setSubtitleSaveError(err?.response?.data?.error ?? "전체 자막 동기화 실패");
+    } finally {
+      setSubtitleLoading(false);
     }
-    if (cur) lines.push(cur);
-    return lines.join("\n");
   }
 
-  // 한국어·영어 자막 모두 30자 이내로 분할
+  // 텍스트를 maxChars 이내 단어 경계에서 한 줄로 자름 (의미 단위 보존)
+  function splitTextAt(text: string, maxChars = 30): string {
+    if (!text) return text;
+    const flat = text.replace(/\n+/g, " ").trim();
+    if (flat.length <= maxChars) return flat;
+    const spaceIdx = flat.lastIndexOf(" ", maxChars);
+    return (spaceIdx > maxChars / 2 ? flat.slice(0, spaceIdx) : flat.slice(0, maxChars)).trim();
+  }
+
+  // 모든 언어 자막을 30자 이내 한 줄로 자동 조정
   function handleSplitTo30() {
     const MAX = 30;
     setSubtitles((prev) =>
@@ -281,6 +304,7 @@ export function VideoStudio() {
         ...s,
         text:   s.text   ? splitTextAt(s.text,   MAX) : s.text,
         enText: s.enText ? splitTextAt(s.enText, MAX) : s.enText,
+        heText: s.heText ? splitTextAt(s.heText, MAX) : s.heText,
       }))
     );
   }
@@ -534,6 +558,30 @@ export function VideoStudio() {
       if (data.hebrewText) setHebrewText(data.hebrewText);
       if (data.englishText) setEnglishText(data.englishText);
       setVideoFileName(data.videoFileName);
+
+      // 씬별 자막 추출 — 해당 씬의 타이밍 항목만 필터링 후 t=0 기준으로 re-offset
+      let sceneSubtitlesJson: string | undefined;
+      if (subtitles.length > 0) {
+        const ep = episodes?.find((e) => e.id === selectedEpisodeId);
+        const sceneCount = ep?.sceneCount ?? 1;
+        const totalDur = subtitles[subtitles.length - 1]?.endSec ?? 0;
+        const segDur = sceneCount > 0 ? totalDur / sceneCount : totalDur;
+        const sceneStart = (sceneNum - 1) * segDur;
+        const sceneEnd = sceneNum * segDur;
+
+        const sceneEntries = subtitles
+          .filter((s) => s.startSec >= sceneStart - 0.05 && s.startSec < sceneEnd)
+          .map((s) => ({
+            ...s,
+            startSec: Math.max(0, s.startSec - sceneStart),
+            endSec: Math.max(0.1, Math.min(s.endSec, sceneEnd) - sceneStart),
+          }));
+
+        sceneSubtitlesJson = sceneEntries.length > 0
+          ? JSON.stringify(sceneEntries)
+          : ""; // 빈 문자열 → static 텍스트 표시
+      }
+
       sendMutation.mutate({
         koreanText: data.koreanText,
         hebrewText: data.hebrewText,
@@ -544,6 +592,7 @@ export function VideoStudio() {
         episodeId: selectedEpisodeId,
         showSubtitle,
         showNarration,
+        subtitlesJson: sceneSubtitlesJson,
       });
     } catch {
       // 씬 텍스트 fetch 실패 — 현재 텍스트 유지
@@ -1728,10 +1777,21 @@ export function VideoStudio() {
                       </button>
                     </>
                   )}
+                  {selectedEpisodeId && (
+                    <button
+                      onClick={handleSyncAllSubtitles}
+                      disabled={subtitleLoading}
+                      title="HE+KO+EN 3종 자막을 동일한 씬 경계로 일괄 동기화 (히브리어 성경·한국어·영어 정렬 보장)"
+                      className="flex items-center gap-1 text-xs text-emerald-300/80 hover:text-emerald-200 transition-colors px-2 py-1.5 border border-emerald-400/30 rounded-lg disabled:opacity-40"
+                      style={{ background: "rgba(0,180,100,0.12)" }}
+                    >
+                      {subtitleLoading ? <><Loader2 size={10} className="animate-spin" /> 동기화 중…</> : "🔄 전체 자막 동기화"}
+                    </button>
+                  )}
                   {subtitles.length > 0 && (
                     <button
                       onClick={handleSplitTo30}
-                      title="한국어·영어 자막을 30자 이내로 자동 분할"
+                      title="모든 언어 자막을 30자 이내로 의미 단위 자동 분할"
                       className="flex items-center gap-1 text-xs text-white/50 hover:text-white/80 transition-colors px-2 py-1.5 border border-white/15 rounded-lg"
                       style={{ background: "rgba(255,255,255,0.06)" }}
                     >

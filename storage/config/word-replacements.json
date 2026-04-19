@@ -13,5 +13,20 @@
     "from": "하나님",
     "to": "엘로힘",
     "enabled": true
+  },
+  {
+    "from": "Lord",
+    "to": "ellohim",
+    "enabled": true
+  },
+  {
+    "from": "My Lord",
+    "to": "Ellohim",
+    "enabled": true
+  },
+  {
+    "from": "신",
+    "to": "앨로힘",
+    "enabled": true
   }
 ]
