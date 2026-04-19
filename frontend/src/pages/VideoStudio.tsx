@@ -633,7 +633,7 @@ export function VideoStudio() {
     }
   }
 
-  // BGM 파일 업로드
+  // BGM 파일 업로드 → 업로드 즉시 Remotion public/에 적용
   async function handleBgmUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !selectedEpisodeId) return;
@@ -641,7 +641,14 @@ export function VideoStudio() {
     setBgmMsg("");
     try {
       const res = await bgmApi.upload(selectedEpisodeId, file);
-      // 업로드 성공 후 재조회 대신 직접 상태 구성 (fs.existsSync 경로 불일치 방지)
+      // 업로드 성공 후 바로 Remotion public/에 복사 + data.json 반영
+      const applyRes = await fetch(`/api/v1/remotion/bgm/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ episodeId: selectedEpisodeId, bgmVolume: bgmVolume / 100 }),
+      });
+      const applyData = await applyRes.json();
+      if (!applyRes.ok) throw new Error(applyData.error ?? "BGM 적용 실패");
       setBgmInfo({
         bgmUrl: res.bgmUrl,
         isCustom: true,
@@ -649,7 +656,9 @@ export function VideoStudio() {
         activeFileExists: true,
         activeFileSizeKb: res.sizeKb,
       });
-      setBgmMsg(`✓ BGM 업로드 완료 — ${res.filename} (${res.sizeKb}KB)`);
+      setBgmMsg(`✓ BGM 업로드 및 적용 완료 — ${res.filename} (${res.sizeKb}KB)`);
+      // 미리보기 iframe 새로고침
+      setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 300);
     } catch (err: any) {
       setBgmMsg(`⚠ ${err?.response?.data?.error ?? err.message ?? "업로드 실패"}`);
     } finally {
@@ -687,6 +696,8 @@ export function VideoStudio() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "적용 실패");
       setBgmMsg(`✓ BGM 적용 완료 (음량 ${bgmVolume}%)`);
+      // 미리보기 iframe 새로고침
+      setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 300);
     } catch (err: any) {
       setBgmMsg(`⚠ ${err.message}`);
     } finally {

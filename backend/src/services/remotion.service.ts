@@ -1500,15 +1500,9 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
 
   const segDur = totalDuration / refCount;
 
-  // verseNum 기반 히브리어 맵 (non-singleScene 경로용)
-  let verseHeMapForNonSingle: Map<number, string> | null = null;
-  if (!singleScene && episode.verseRange && episode.bibleBookId) {
-    const verseHeBoundsNS = await getVerseHebrewBoundaries(episode.bibleBookId, episode.verseRange, totalDuration);
-    if (verseHeBoundsNS && verseHeBoundsNS.length > 0) {
-      verseHeMapForNonSingle = new Map(verseHeBoundsNS.map((b) => [b.verseNum, b.hebrewText]));
-      console.log(`[Subtitle] non-singleScene verseNum HE 맵 생성: ${verseHeBoundsNS.length}절`);
-    }
-  }
+  // non-singleScene 경로에서는 SRT_HE 씬 인덱스 시간 비례 방식만 사용
+  // (verseNum 맵은 장 경계 넘어가는 경우 verse 번호 충돌로 잘못된 히브리어 매핑 발생)
+  const verseHeMapForNonSingle: Map<number, string> | null = null;
 
   // non-singleScene 경로에서도 씬별 expandSceneToChunks 적용
   // → 같은 씬에 속하는 항목들이 전체 단락 텍스트를 동일하게 갖는 문제 방지
@@ -1532,6 +1526,7 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
     const entry: SubtitleTiming = { ...t };
     if (koChunks) {
       entry.text = applyWordReplacements(koChunks[i] ?? "");
+    }
     if (heChunks) {
       entry.heText = heChunks[i] ?? "";
     } else if (heScenes.length > 0) {
