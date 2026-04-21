@@ -1502,19 +1502,31 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
   // non-singleScene 경로에서도 씬별 expandSceneToChunks 적용
   // → 같은 씬에 속하는 항목들이 전체 단락 텍스트를 동일하게 갖는 문제 방지
   if (!singleScene && koScenes.length > 0) {
-    const sceneGroups: number[][] = Array.from({ length: koScenes.length }, () => []);
-    existing.forEach((t, idx) => {
-      const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), koScenes.length - 1) : 0;
-      if (sceneGroups[sIdx]) sceneGroups[sIdx].push(idx);
-    });
     koChunks = new Array(n).fill("");
-    sceneGroups.forEach((indices, sceneIdx) => {
-      const chunks = expandSceneToChunks(koScenes[sceneIdx] ?? "", indices.length, KO_CHARS_PER_LINE);
-      indices.forEach((entryIdx, chunkIdx) => {
-        koChunks![entryIdx] = applyWordReplacements(chunks[chunkIdx] ?? "");
+    if (koScenes.length > refCount) {
+      // SRT_KO가 단어/구절 단위(항목 수 > 씬 수): 시간 비례 직접 매핑
+      // (refCount 기준 segDur를 쓰면 마지막 씬에만 극히 일부 SRT 항목이 배정되어 텍스트가 잘림)
+      const koSegDur = totalDuration / koScenes.length;
+      existing.forEach((t, idx) => {
+        const sIdx = koSegDur > 0 ? Math.min(Math.floor(t.startSec / koSegDur), koScenes.length - 1) : 0;
+        koChunks![idx] = applyWordReplacements(koScenes[sIdx] ?? "");
       });
-    });
-    console.log(`[Subtitle] non-singleScene 씬별 KO 청크 분할: ${koScenes.length}씬 → ${n}개`);
+      console.log(`[Subtitle] non-singleScene KO 시간 비례 직접 매핑: ${koScenes.length}항목 → ${n}개`);
+    } else {
+      // SRT_KO가 씬 단위: 씬별 expandSceneToChunks 적용
+      const sceneGroups: number[][] = Array.from({ length: koScenes.length }, () => []);
+      existing.forEach((t, idx) => {
+        const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), koScenes.length - 1) : 0;
+        if (sceneGroups[sIdx]) sceneGroups[sIdx].push(idx);
+      });
+      sceneGroups.forEach((indices, sceneIdx) => {
+        const chunks = expandSceneToChunks(koScenes[sceneIdx] ?? "", indices.length, KO_CHARS_PER_LINE);
+        indices.forEach((entryIdx, chunkIdx) => {
+          koChunks![entryIdx] = applyWordReplacements(chunks[chunkIdx] ?? "");
+        });
+      });
+      console.log(`[Subtitle] non-singleScene KO 씬별 청크 분할: ${koScenes.length}씬 → ${n}개`);
+    }
   }
 
   const updated: SubtitleTiming[] = existing.map((t, i) => {
