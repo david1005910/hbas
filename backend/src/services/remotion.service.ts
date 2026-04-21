@@ -1495,9 +1495,15 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
 
   const segDur = totalDuration / refCount;
 
-  // non-singleScene 경로에서는 SRT_HE 씬 인덱스 시간 비례 방식만 사용
-  // (verseNum 맵은 장 경계 넘어가는 경우 verse 번호 충돌로 잘못된 히브리어 매핑 발생)
-  const verseHeMapForNonSingle: Map<number, string> | null = null;
+  // non-singleScene 경로: verseRange 있으면 절 경계 기반 히브리어 배분
+  // (generateNarrationForRemotionPublic과 동일한 방식 → 한국어 나레이션 타이밍과 히브리어가 동일 절에 매핑)
+  let verseHeBoundsForNonSingle: Array<{ startSec: number; endSec: number; hebrewText: string; verseNum: number }> | null = null;
+  if (!singleScene && heScenes.length > 0 && episode.verseRange && episode.bibleBookId) {
+    verseHeBoundsForNonSingle = await getVerseHebrewBoundaries(episode.bibleBookId, episode.verseRange, totalDuration);
+    if (verseHeBoundsForNonSingle) {
+      console.log(`[Subtitle] non-singleScene HE: 절 경계 기반 배분 준비 완료 (${verseHeBoundsForNonSingle.length}절)`);
+    }
+  }
 
   // non-singleScene 경로에서도 씬별 expandSceneToChunks 적용
   // → 같은 씬에 속하는 항목들이 전체 단락 텍스트를 동일하게 갖는 문제 방지
@@ -1536,14 +1542,19 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
     }
     if (heChunks) {
       entry.heText = heChunks[i] ?? "";
+    } else if (verseHeBoundsForNonSingle && verseHeBoundsForNonSingle.length > 0) {
+      // verseRange 기반 절 경계 시간 매핑 (generateNarrationForRemotionPublic과 동일)
+      // 한국어 나레이션 타이밍과 히브리어가 동일한 절에 매핑되어 일치
+      let idx = verseHeBoundsForNonSingle.findIndex((b, bi) => {
+        const isLast = bi === verseHeBoundsForNonSingle!.length - 1;
+        return t.startSec >= b.startSec && (isLast || t.startSec < verseHeBoundsForNonSingle![bi + 1].startSec);
+      });
+      if (idx < 0) idx = verseHeBoundsForNonSingle.length - 1;
+      entry.heText = verseHeBoundsForNonSingle[idx].hebrewText;
     } else if (heScenes.length > 0) {
-      // verseNum이 있으면 verseNum 직접 매핑, 없으면 시간 비례
-      if (verseHeMapForNonSingle && typeof (t as any).verseNum === "number") {
-        entry.heText = verseHeMapForNonSingle.get((t as any).verseNum) ?? entry.heText ?? "";
-      } else {
-        const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), heScenes.length - 1) : 0;
-        entry.heText = heScenes[sIdx] ?? "";
-      }
+      // verseRange 없으면 씬 기반 시간 비례 fallback
+      const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), heScenes.length - 1) : 0;
+      entry.heText = heScenes[sIdx] ?? "";
     }
     if (enChunks) {
       entry.enText = enChunks[i] ?? "";
