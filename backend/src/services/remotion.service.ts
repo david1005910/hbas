@@ -1773,6 +1773,33 @@ export async function generateNarrationForRemotionPublic(
     }
   }
 
+  // ── 마지막 항목 텍스트 단편 보정 ─────────────────────────────────────────────
+  // Google TTS word timing이 마지막 몇 단어를 별도 항목으로 제공하지 않아
+  // 마지막 entry에 "주님께서" 같은 단어 단편만 남는 문제 수정.
+  // 마지막 entry 텍스트가 짧고 문장 끝 부호가 없으면 SRT_KO 전체 문장으로 교체.
+  if (finalTimings.length > 0) {
+    const lastEntry = finalTimings[finalTimings.length - 1] as any;
+    const lastText: string = lastEntry.text ?? "";
+    const isTruncated = lastText.length < 15 && !/[.?!。]\s*$/.test(lastText);
+    if (isTruncated) {
+      const srtKoForFix = episode.contents.find((c) => c.contentType === "SRT_KO");
+      if (srtKoForFix?.content) {
+        const koScenesForFix = extractSrtAllScenes(srtKoForFix.content);
+        if (koScenesForFix.length > 0) {
+          const fixSegDur = narrationDuration / koScenesForFix.length;
+          const fixIdx = fixSegDur > 0
+            ? Math.min(Math.floor(lastEntry.startSec / fixSegDur), koScenesForFix.length - 1)
+            : koScenesForFix.length - 1;
+          const fullText = applyWordReplacements(koScenesForFix[fixIdx] ?? "");
+          if (fullText.length > lastText.length) {
+            finalTimings[finalTimings.length - 1] = { ...lastEntry, text: fullText };
+            console.log(`[Remotion-TTS] 마지막 항목 단편 보정: "${lastText}" → "${fullText.slice(0, 60)}"`);
+          }
+        }
+      }
+    }
+  }
+
   // subtitlesJson: 자막 타이밍 JSON → Remotion props에 전달
   const subtitlesJson = JSON.stringify(finalTimings);
 
