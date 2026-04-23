@@ -28,5 +28,20 @@
     "from": "앨로힘",
     "to": "엘로힘",
     "enabled": true
+  },
+  {
+    "from": "자엘로힘",
+    "to": "자신",
+    "enabled": true
+  },
+  {
+    "from": "만드엘로힘",
+    "to": "만드신",
+    "enabled": true
+  },
+  {
+    "from": "임엘로힘",
+    "to": "임신",
+    "enabled": true
   }
 ]
