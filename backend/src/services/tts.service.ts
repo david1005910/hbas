@@ -178,17 +178,10 @@ export async function generateNarration(
   // 한국어만 단어 치환 적용 (영어는 불필요)
   const extracted = cleanNarrationText(language === "ko" ? applyWordReplacements(base) : base);
 
-  // 바이트 한도 (한글 3바이트/자, 4800 bytes)
-  let cleanedText = "";
-  let byteCount = 0;
-  for (const char of extracted) {
-    const charBytes = Buffer.byteLength(char, "utf8");
-    if (byteCount + charBytes > 4800) break;
-    cleanedText += char;
-    byteCount += charBytes;
-  }
+  // 전체 텍스트를 cleanedText로 사용 (바이트 전역 제한 제거 — 긴 에피소드 전체 처리)
+  const cleanedText = extracted;
 
-  console.log(`[TTS] 텍스트 정제: ${extracted.length}자 → ${cleanedText.length}자`);
+  console.log(`[TTS] 텍스트 정제 완료: ${cleanedText.length}자 (${Buffer.byteLength(cleanedText, "utf8")} bytes)`);
 
   if (!cleanedText) {
     throw new Error("TTS 변환할 텍스트가 없습니다. 에피소드 SCRIPT/SRT_KO 내용을 확인하세요.");
@@ -196,10 +189,33 @@ export async function generateNarration(
 
   // 마침표·물음표·느낌표·쉼표 기준 분절 (자막 한 줄 = 한 절)
   // 쉼표와 마침표 모두 분리 → 쉼표는 더 긴 묵음(600ms), 마침표는 900ms
-  const rawSegments = cleanedText
+  const punctSegments = cleanedText
     .split(/(?<=[,!?.，。\u3002\uff0c])\s*/u)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+
+  // 각 분절이 TTS API 한도(4500 bytes)를 초과하면 공백 기준으로 추가 분할
+  const TTS_SEG_BYTE_LIMIT = 4500;
+  const rawSegments: string[] = [];
+  for (const seg of punctSegments) {
+    if (Buffer.byteLength(seg, "utf8") <= TTS_SEG_BYTE_LIMIT) {
+      rawSegments.push(seg);
+    } else {
+      // 공백 기준으로 단어를 묶어 4500바이트 이하로 분할
+      const words = seg.split(/\s+/);
+      let chunk = "";
+      for (const word of words) {
+        const candidate = chunk ? chunk + " " + word : word;
+        if (Buffer.byteLength(candidate, "utf8") > TTS_SEG_BYTE_LIMIT) {
+          if (chunk) rawSegments.push(chunk);
+          chunk = word;
+        } else {
+          chunk = candidate;
+        }
+      }
+      if (chunk) rawSegments.push(chunk);
+    }
+  }
 
   const dir = path.join(AUDIO_BASE, episodeId);
   fs.mkdirSync(dir, { recursive: true });
