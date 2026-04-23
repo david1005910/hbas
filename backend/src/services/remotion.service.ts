@@ -1598,20 +1598,26 @@ export async function generateNarrationForRemotionPublic(
   //   4순위: 에피소드 제목
   let narrationText = "";
 
-  // 0순위: 프론트엔드에서 직접 전달된 현재 자막 편집 내용
-  if (overrideNarrationText?.trim()) {
-    narrationText = applyWordReplacements(overrideNarrationText.trim());
-    console.log(`[Remotion-TTS] 자막 편집기 직접 전달 텍스트 사용 (${narrationText.length}자) ← 최우선`);
+  // 1순위: SRT_KO DB (전체 성경 구절 내용 — 가장 완전한 소스)
+  const srtKoForText = episode.contents.find((c) => c.contentType === "SRT_KO");
+  if (srtKoForText?.content) {
+    const srtKoText = extractSrtAllScenes(srtKoForText.content).join(" ");
+    if (srtKoText) {
+      narrationText = applyWordReplacements(srtKoText);
+      console.log(`[Remotion-TTS] SRT_KO DB 사용 (${narrationText.length}자)`);
+    }
   }
 
-  // 1순위: SRT_KO DB — 에피소드별로 고유하게 저장되어 있어 신뢰도가 가장 높음
-  if (!narrationText) {
-    const srtKoForText = episode.contents.find((c) => c.contentType === "SRT_KO");
-    if (srtKoForText?.content) {
-      narrationText = extractSrtAllScenes(srtKoForText.content).join(" ");
-      if (narrationText) {
-        console.log(`[Remotion-TTS] SRT_KO DB 사용 (${narrationText.length}자)`);
-      }
+  // 0순위: 프론트엔드 자막 편집기 직접 전달 텍스트 (SRT_KO보다 80% 이상 길이가 비슷할 때만 우선)
+  // SRT_KO보다 현저히 짧으면 이전 TTS 잘림 결과를 재사용하는 악순환 방지 → SRT_KO 유지
+  if (overrideNarrationText?.trim()) {
+    const overrideLen = overrideNarrationText.trim().length;
+    const srtKoLen = narrationText.length;
+    if (srtKoLen === 0 || overrideLen >= srtKoLen * 0.8) {
+      narrationText = applyWordReplacements(overrideNarrationText.trim());
+      console.log(`[Remotion-TTS] 자막 편집기 직접 전달 텍스트 사용 (${narrationText.length}자) ← 최우선`);
+    } else {
+      console.log(`[Remotion-TTS] 자막 편집기 텍스트(${overrideLen}자)가 SRT_KO(${srtKoLen}자)보다 현저히 짧아 SRT_KO 유지 (잘림 방지)`);
     }
   }
 
