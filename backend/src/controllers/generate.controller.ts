@@ -319,7 +319,7 @@ export async function generateYtMeta(req: Request, res: Response, next: NextFunc
       episode.verseRange
     );
 
-    await prisma.generatedContent.create({
+    const saved = await prisma.generatedContent.create({
       data: {
         episodeId: episode.id,
         contentType: "YT_META",
@@ -328,7 +328,7 @@ export async function generateYtMeta(req: Request, res: Response, next: NextFunc
       },
     });
 
-    res.json({ message: "YT 메타데이터 생성 완료", content: result });
+    res.json({ message: "YT 메타데이터 생성 완료", content: result, contentId: saved.id });
   } catch (err) { next(err); }
 }
 

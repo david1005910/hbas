@@ -13,20 +13,25 @@ export function YtMetaGenerator({ episodeId, existing, onDone }: Props) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [content, setContent] = useState(existing?.content ?? "");
+  const [generatedContentId, setGeneratedContentId] = useState<string | null>(null);
 
   async function handleGenerate() {
     setIsLoading(true);
     setError("");
     try {
       const result = await generateApi.ytMeta(episodeId);
-      setContent(result.content);
+      setContent(result.content ?? "");
+      if (result.contentId) setGeneratedContentId(result.contentId);
       onDone?.();
     } catch (e: any) {
-      setError(e.message);
+      setError(e.response?.data?.error ?? e.message ?? "메타데이터 생성 실패");
     } finally {
       setIsLoading(false);
     }
   }
+
+  // 다운로드용 content ID: 방금 생성된 것 > 기존 저장본 순
+  const downloadContentId = generatedContentId ?? existing?.id ?? null;
 
   let parsed: any = null;
   try { parsed = content ? JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] || "") : null; } catch {}
@@ -39,7 +44,7 @@ export function YtMetaGenerator({ episodeId, existing, onDone }: Props) {
           <p className="text-parchment/50 text-xs font-body mt-0.5">한국어·히브리어·영어 제목·설명·태그 (SEO 최적화)</p>
         </div>
         <div className="flex gap-2">
-          {existing && <DownloadButton href={`/api/v1/contents/${existing.id}/download`} label="JSON 저장" />}
+          {downloadContentId && <DownloadButton href={`/api/v1/contents/${downloadContentId}/download`} label="JSON 저장" />}
           <button
             onClick={handleGenerate}
             disabled={isLoading}

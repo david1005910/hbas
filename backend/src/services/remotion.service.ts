@@ -1456,36 +1456,33 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
     if (koScenes.length === 1 && koScenes[0]) {
       koChunks = expandSceneToChunks(koScenes[0], n, KO_CHARS_PER_LINE);
     }
-    if (heScenes.length === 1 && heScenes[0]) {
-      // 히브리어: verseRange 있으면 절 단위, 없으면 전체 텍스트를 모든 항목에
-      if (episode.verseRange && episode.bibleBookId) {
-        const verseHeBounds = await getVerseHebrewBoundaries(episode.bibleBookId, episode.verseRange, totalDuration);
-        if (verseHeBounds && verseHeBounds.length > 0) {
-          const verseMap = new Map(verseHeBounds.map((b) => [b.verseNum, b.hebrewText]));
-          const hasVerseNums = existing.every((t: any) => typeof (t as any).verseNum === "number");
-          if (hasVerseNums) {
-            // verseNum 직접 매핑 — TTS 타이밍과 히브리어 글자 수 비례의 불일치 방지
-            heChunks = existing.map((t: any) =>
-              verseMap.get((t as any).verseNum) ?? verseHeBounds[verseHeBounds.length - 1].hebrewText
-            );
-            console.log(`[Subtitle] 단일씬→verseNum 직접 매핑 HE ${verseHeBounds.length}절→${n}개`);
-          } else {
-            heChunks = existing.map((t) => {
-              let idx = verseHeBounds.findIndex((b, i) => {
-                const isLast = i === verseHeBounds.length - 1;
-                return t.startSec >= b.startSec && (isLast || t.startSec < verseHeBounds[i + 1].startSec);
-              });
-              if (idx < 0) idx = verseHeBounds.length - 1;
-              return verseHeBounds[idx].hebrewText;
-            });
-            console.log(`[Subtitle] 단일씬→시간 비례 HE ${verseHeBounds.length}절→${n}개`);
-          }
+    // 히브리어: verseRange 있으면 절 단위, 없으면 SRT_HE 전체 텍스트 배분
+    if (episode.verseRange && episode.bibleBookId) {
+      const verseHeBounds = await getVerseHebrewBoundaries(episode.bibleBookId, episode.verseRange, totalDuration);
+      if (verseHeBounds && verseHeBounds.length > 0) {
+        const verseMap = new Map(verseHeBounds.map((b) => [b.verseNum, b.hebrewText]));
+        const hasVerseNums = existing.every((t: any) => typeof (t as any).verseNum === "number");
+        if (hasVerseNums) {
+          heChunks = existing.map((t: any) =>
+            verseMap.get((t as any).verseNum) ?? verseHeBounds[verseHeBounds.length - 1].hebrewText
+          );
+          console.log(`[Subtitle] 단일씬→verseNum 직접 매핑 HE ${verseHeBounds.length}절→${n}개`);
         } else {
-          heChunks = Array(n).fill(cleanHebrewForDisplay(heScenes[0]));
+          heChunks = existing.map((t) => {
+            let idx = verseHeBounds.findIndex((b, i) => {
+              const isLast = i === verseHeBounds.length - 1;
+              return t.startSec >= b.startSec && (isLast || t.startSec < verseHeBounds[i + 1].startSec);
+            });
+            if (idx < 0) idx = verseHeBounds.length - 1;
+            return verseHeBounds[idx].hebrewText;
+          });
+          console.log(`[Subtitle] 단일씬→시간 비례 HE ${verseHeBounds.length}절→${n}개`);
         }
-      } else {
+      } else if (heScenes.length === 1 && heScenes[0]) {
         heChunks = Array(n).fill(cleanHebrewForDisplay(heScenes[0]));
       }
+    } else if (heScenes.length === 1 && heScenes[0]) {
+      heChunks = Array(n).fill(cleanHebrewForDisplay(heScenes[0]));
     }
     if (enScenes.length === 1 && enScenes[0]) {
       enChunks = expandSceneToChunks(enScenes[0], n, 40);
@@ -1495,23 +1492,24 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
 
   const segDur = totalDuration / refCount;
 
-  // non-singleScene 경로: verseRange 있으면 절 경계 기반 히브리어 배분
-  // (generateNarrationForRemotionPublic과 동일한 방식 → 한국어 나레이션 타이밍과 히브리어가 동일 절에 매핑)
+  // non-singleScene 경로: verseRange 있으면 절 경계 기반 히브리어·한국어 배분
+  // heScenes.length 무관하게 항상 계산 → HE 빈칸 방지 + 직독직해 보장
   let verseHeBoundsForNonSingle: Array<{ startSec: number; endSec: number; hebrewText: string; verseNum: number }> | null = null;
-  if (!singleScene && heScenes.length > 0 && episode.verseRange && episode.bibleBookId) {
+  let verseKoBoundsForNonSingle: Array<{ startSec: number; endSec: number; koreanText: string; verseNum: number }> | null = null;
+  if (!singleScene && episode.verseRange && episode.bibleBookId) {
     verseHeBoundsForNonSingle = await getVerseHebrewBoundaries(episode.bibleBookId, episode.verseRange, totalDuration);
+    verseKoBoundsForNonSingle = await getVerseTimeBoundaries(episode.bibleBookId, episode.verseRange, totalDuration);
     if (verseHeBoundsForNonSingle) {
-      console.log(`[Subtitle] non-singleScene HE: 절 경계 기반 배분 준비 완료 (${verseHeBoundsForNonSingle.length}절)`);
+      console.log(`[Subtitle] non-singleScene HE/KO: 절 경계 기반 배분 준비 완료 (${verseHeBoundsForNonSingle.length}절)`);
     }
   }
 
   // non-singleScene 경로에서도 씬별 expandSceneToChunks 적용
-  // → 같은 씬에 속하는 항목들이 전체 단락 텍스트를 동일하게 갖는 문제 방지
-  if (!singleScene && koScenes.length > 0) {
+  // → verseRange 없을 때 SRT_KO 씬 기반 분할
+  if (!singleScene && koScenes.length > 0 && !verseKoBoundsForNonSingle) {
     koChunks = new Array(n).fill("");
     if (koScenes.length > refCount) {
       // SRT_KO가 단어/구절 단위(항목 수 > 씬 수): 시간 비례 직접 매핑
-      // (refCount 기준 segDur를 쓰면 마지막 씬에만 극히 일부 SRT 항목이 배정되어 텍스트가 잘림)
       const koSegDur = totalDuration / koScenes.length;
       existing.forEach((t, idx) => {
         const sIdx = koSegDur > 0 ? Math.min(Math.floor(t.startSec / koSegDur), koScenes.length - 1) : 0;
@@ -1535,27 +1533,40 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
     }
   }
 
+  /** 공통 절 경계 시간 탐색 헬퍼 */
+  function findVerseIdx<T extends { startSec: number }>(bounds: T[], startSec: number): number {
+    let idx = bounds.findIndex((b, bi) => {
+      const isLast = bi === bounds.length - 1;
+      return startSec >= b.startSec && (isLast || startSec < bounds[bi + 1].startSec);
+    });
+    if (idx < 0) idx = bounds.length - 1;
+    return idx;
+  }
+
   const updated: SubtitleTiming[] = existing.map((t, i) => {
     const entry: SubtitleTiming = { ...t };
+
+    // ── 한국어 ────────────────────────────────────────────────────────────────
     if (koChunks) {
       entry.text = applyWordReplacements(koChunks[i] ?? "");
+    } else if (verseKoBoundsForNonSingle && verseKoBoundsForNonSingle.length > 0) {
+      // 절 기반 직독직해: BibleVerse.koreanText를 히브리어와 동일한 절에서 표시
+      entry.text = verseKoBoundsForNonSingle[findVerseIdx(verseKoBoundsForNonSingle, t.startSec)].koreanText;
     }
+
+    // ── 히브리어 ──────────────────────────────────────────────────────────────
     if (heChunks) {
       entry.heText = heChunks[i] ?? "";
     } else if (verseHeBoundsForNonSingle && verseHeBoundsForNonSingle.length > 0) {
-      // verseRange 기반 절 경계 시간 매핑 (generateNarrationForRemotionPublic과 동일)
-      // 한국어 나레이션 타이밍과 히브리어가 동일한 절에 매핑되어 일치
-      let idx = verseHeBoundsForNonSingle.findIndex((b, bi) => {
-        const isLast = bi === verseHeBoundsForNonSingle!.length - 1;
-        return t.startSec >= b.startSec && (isLast || t.startSec < verseHeBoundsForNonSingle![bi + 1].startSec);
-      });
-      if (idx < 0) idx = verseHeBoundsForNonSingle.length - 1;
-      entry.heText = verseHeBoundsForNonSingle[idx].hebrewText;
+      // 절 경계 기반: verseRange 있으면 항상 이 경로 (HE 빈칸 완전 방지)
+      entry.heText = verseHeBoundsForNonSingle[findVerseIdx(verseHeBoundsForNonSingle, t.startSec)].hebrewText;
     } else if (heScenes.length > 0) {
       // verseRange 없으면 씬 기반 시간 비례 fallback
       const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), heScenes.length - 1) : 0;
       entry.heText = heScenes[sIdx] ?? "";
     }
+
+    // ── 영어 ──────────────────────────────────────────────────────────────────
     if (enChunks) {
       entry.enText = enChunks[i] ?? "";
     } else if (enScenes.length > 0) {
