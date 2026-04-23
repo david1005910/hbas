@@ -1598,75 +1598,52 @@ export async function generateNarrationForRemotionPublic(
   //   4순위: 에피소드 제목
   let narrationText = "";
 
-  // 1순위: SRT_KO DB (전체 성경 구절 내용 — 가장 완전한 소스)
+  // ── 나레이션 텍스트 소스 선택 (완전성 우선) ─────────────────────────────────
+  // 잘림 감지 함수: 텍스트가 문장 종료 부호로 끝나지 않으면 잘린 것으로 판단
+  const isTextTruncated = (text: string): boolean =>
+    text.length > 0 && !/[.?!。』」")\]]\s*$/.test(text.trimEnd());
+
+  // 1순위: SCRIPT 나레이션(KO) — 원본 스크립트는 항상 완전한 내용 보장
+  const scriptForNarr = episode.contents.find((c) => c.contentType === "SCRIPT");
+  if (scriptForNarr?.content) {
+    const scriptKo = extractAllKoreanNarration(scriptForNarr.content);
+    if (scriptKo && !isTextTruncated(scriptKo)) {
+      narrationText = scriptKo;
+      console.log(`[Remotion-TTS] SCRIPT 나레이션(KO) 사용 (${narrationText.length}자) ← 완전한 원본`);
+    } else if (scriptKo) {
+      console.log(`[Remotion-TTS] SCRIPT 나레이션(KO) 잘림 감지 (${scriptKo.length}자) → SRT_KO 비교`);
+    }
+  }
+
+  // 2순위: SRT_KO DB — 잘리지 않은 경우이면서 SCRIPT보다 길면 사용
   const srtKoForText = episode.contents.find((c) => c.contentType === "SRT_KO");
   if (srtKoForText?.content) {
     const srtKoText = extractSrtAllScenes(srtKoForText.content).join(" ");
-    if (srtKoText) {
-      narrationText = applyWordReplacements(srtKoText);
-      console.log(`[Remotion-TTS] SRT_KO DB 사용 (${narrationText.length}자)`);
+    if (srtKoText && !isTextTruncated(srtKoText)) {
+      // SRT_KO가 완전하고 현재 텍스트보다 길면 우선 사용
+      if (srtKoText.length > narrationText.length) {
+        narrationText = applyWordReplacements(srtKoText);
+        console.log(`[Remotion-TTS] SRT_KO DB 사용 (${narrationText.length}자) ← SCRIPT보다 길거나 SCRIPT 없음`);
+      } else {
+        console.log(`[Remotion-TTS] SRT_KO 완전하나 SCRIPT(${narrationText.length}자)보다 짧아(${srtKoText.length}자) SCRIPT 유지`);
+      }
+    } else if (srtKoText) {
+      console.log(`[Remotion-TTS] SRT_KO 잘림 감지 (${srtKoText.length}자, 마지막:'${srtKoText.trimEnd().slice(-10)}') → 스킵`);
     }
   }
 
-  // 0순위: 프론트엔드 자막 편집기 직접 전달 텍스트 (SRT_KO보다 80% 이상 길이가 비슷할 때만 우선)
-  // SRT_KO보다 현저히 짧으면 이전 TTS 잘림 결과를 재사용하는 악순환 방지 → SRT_KO 유지
+  // 3순위: overrideNarrationText — 완전하고 현재 텍스트보다 길면 사용 (잘린 자막 재사용 방지)
   if (overrideNarrationText?.trim()) {
-    const overrideLen = overrideNarrationText.trim().length;
-    const srtKoLen = narrationText.length;
-    if (srtKoLen === 0 || overrideLen >= srtKoLen * 0.8) {
-      narrationText = applyWordReplacements(overrideNarrationText.trim());
-      console.log(`[Remotion-TTS] 자막 편집기 직접 전달 텍스트 사용 (${narrationText.length}자) ← 최우선`);
-    } else {
-      console.log(`[Remotion-TTS] 자막 편집기 텍스트(${overrideLen}자)가 SRT_KO(${srtKoLen}자)보다 현저히 짧아 SRT_KO 유지 (잘림 방지)`);
+    const overrideText = overrideNarrationText.trim();
+    if (!isTextTruncated(overrideText) && overrideText.length > narrationText.length) {
+      narrationText = applyWordReplacements(overrideText);
+      console.log(`[Remotion-TTS] 자막 편집기 텍스트 사용 (${narrationText.length}자) ← 완전하고 더 긺`);
+    } else if (isTextTruncated(overrideText)) {
+      console.log(`[Remotion-TTS] 자막 편집기 텍스트 잘림 감지 → 스킵 (잘린 자막 재사용 방지)`);
     }
   }
 
-  // 2순위: subtitles.json — 자막 편집기 저장 내용 (단, data.json의 episodeId와 일치할 때만 사용)
-  if (!narrationText) {
-    const subtitlesFilePath = path.join(PROJECT_PATH, "public", "subtitles.json");
-    const dataJsonPath = path.join(PROJECT_PATH, "public", "data.json");
-    const dataEpisodeId = fs.existsSync(dataJsonPath)
-      ? (() => { try { return JSON.parse(fs.readFileSync(dataJsonPath, "utf-8")).episodeId; } catch { return null; } })()
-      : null;
-    const isSameEpisode = !dataEpisodeId || dataEpisodeId === episodeId;
-    if (isSameEpisode && fs.existsSync(subtitlesFilePath)) {
-      try {
-        const rawSubs: Array<{ text?: string }> = JSON.parse(fs.readFileSync(subtitlesFilePath, "utf-8"));
-        if (Array.isArray(rawSubs) && rawSubs.length > 0) {
-          // 연속 중복 제거: 씬 내 동일 text가 여러 항목에 반복 → 씬별 고유 텍스트만 추출
-          const uniqueTexts: string[] = [];
-          for (const s of rawSubs) {
-            const t = s.text?.trim() ?? "";
-            if (t && (uniqueTexts.length === 0 || t !== uniqueTexts[uniqueTexts.length - 1])) {
-              uniqueTexts.push(t);
-            }
-          }
-          if (uniqueTexts.length > 0) {
-            narrationText = uniqueTexts.join(" ");
-            console.log(`[Remotion-TTS] subtitles.json 사용 (${uniqueTexts.length}씬, ${narrationText.length}자)`);
-          }
-        }
-      } catch (e) {
-        console.warn("[Remotion-TTS] subtitles.json 읽기 실패:", (e as Error).message);
-      }
-    } else if (!isSameEpisode) {
-      console.log(`[Remotion-TTS] subtitles.json 스킵 — 다른 에피소드(${dataEpisodeId}) 데이터`);
-    }
-  }
-
-  // 3순위: SCRIPT 나레이션(KO) (구 2순위: SRT_KO DB는 1순위로 이동)
-  // 3순위: SCRIPT 나레이션(KO)
-  if (!narrationText) {
-    const scriptContent = episode.contents.find((c) => c.contentType === "SCRIPT");
-    if (scriptContent?.content) {
-      narrationText = extractAllKoreanNarration(scriptContent.content);
-      if (narrationText) {
-        console.log(`[Remotion-TTS] SCRIPT 나레이션(KO) 폴백 사용 (${narrationText.length}자)`);
-      }
-    }
-  }
-
-  // 4순위: 에피소드 제목
+  // 4순위: 에피소드 제목 (최후 폴백)
   if (!narrationText) {
     narrationText = episode.titleKo;
     console.log(`[Remotion-TTS] 폴백: 에피소드 제목 사용 — "${narrationText}"`);
