@@ -1780,7 +1780,8 @@ export async function generateNarrationForRemotionPublic(
   if (finalTimings.length > 0) {
     const lastEntry = finalTimings[finalTimings.length - 1] as any;
     const lastText: string = lastEntry.text ?? "";
-    const isTruncated = lastText.length < 15 && !/[.?!。]\s*$/.test(lastText);
+    // 문장 종료 부호(마침표·쉼표·물음표·닫는따옴표 등)로 끝나지 않으면 단편으로 판단
+    const isTruncated = !/[.?!。,，、'"」』)\]…]\s*$/.test(lastText);
     if (isTruncated) {
       const srtKoForFix = episode.contents.find((c) => c.contentType === "SRT_KO");
       if (srtKoForFix?.content) {
