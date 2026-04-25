@@ -20,8 +20,8 @@ export function VideoStudio() {
   const [hebrewText, setHebrewText] = useState(incomingProps?.hebrewText ?? "");
   const [videoFileName, setVideoFileName] = useState(incomingProps?.videoFileName ?? "");
   const [audioFileName, setAudioFileName] = useState(incomingProps?.audioFileName ?? "narration.mp3");
-  const [language, setLanguage] = useState<"ko" | "en">(incomingProps?.language ?? "ko");
-  const [englishText, setEnglishText] = useState(incomingProps?.englishText ?? "");
+  const [language, setLanguage] = useState<"ko" | "vi">(incomingProps?.language ?? "ko");
+  const [vietnameseText, setVietnameseText] = useState(incomingProps?.vietnameseText ?? "");
   const [iframeSrc, setIframeSrc] = useState(REMOTION_STUDIO_URL);
   const [renderStatus, setRenderStatus] = useState<RenderStatus | null>(null);
   const [fromKeyframeNotice, setFromKeyframeNotice] = useState(!!incomingProps?.fromKeyframe);
@@ -59,6 +59,8 @@ export function VideoStudio() {
   // 자막/나레이션 표시 토글
   const [showSubtitle, setShowSubtitle] = useState(true);
   const [showNarration, setShowNarration] = useState(true);
+  // 자막 폰트 크기 조절
+  const [fontSizeScale, setFontSizeScale] = useState(100); // 50-150% scale
   // Gemini 채팅
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -89,7 +91,7 @@ export function VideoStudio() {
     remotionApi.sendProps({
       koreanText: incomingProps.koreanText ?? "",
       hebrewText: incomingProps.hebrewText ?? "",
-      englishText: incomingProps.englishText ?? "",
+      vietnameseText: incomingProps.vietnameseText ?? "",
       language: incomingProps.language ?? "ko",
       videoFileName: incomingProps.videoFileName ?? "",
       audioFileName: incomingProps.audioFileName ?? "narration.mp3",
@@ -164,14 +166,14 @@ export function VideoStudio() {
       if (result.subtitlesJson) {
         try {
           const parsed = JSON.parse(result.subtitlesJson) as SubEntry[];
-          setSubtitles(parsed.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
+          setSubtitles(parsed.map((s) => ({ ...s, heText: s.heText ?? "", viText: s.viText ?? "" })));
         } catch {}
       }
       setNarrationStatus("done");
       refetchAudios();
       // Remotion Studio 반영 (오디오 파일 + 자막 갱신)
       sendMutation.mutate({
-        koreanText, hebrewText, englishText, language,
+        koreanText, hebrewText, vietnameseText, language,
         videoFileName, audioFileName: result.fileName ?? "narration.mp3",
         episodeId: selectedEpisodeId || undefined,
         showSubtitle, showNarration,
@@ -204,14 +206,14 @@ export function VideoStudio() {
         }
       }
 
-      // enText 없는 항목이 있고 에피소드가 선택된 경우 → 영어 자동 배분 (SRT_EN)
-      const hasNoEnText = loaded.every((s) => !s.enText);
-      if (hasNoEnText && selectedEpisodeId) {
+      // viText 없는 항목이 있고 에피소드가 선택된 경우 → 베트남어 자동 배분 (SRT_VI)
+      const hasNoViText = loaded.every((s) => !s.viText);
+      if (hasNoViText && selectedEpisodeId) {
         try {
-          const filled = await remotionApi.autoFillEnglish(selectedEpisodeId);
+          const filled = await remotionApi.autoFillVietnamese(selectedEpisodeId);
           if (filled.length > 0) loaded = filled;
         } catch {
-          // SRT_EN 없으면 그냥 진행 (에러 무시)
+          // SRT_VI 없으면 그냥 진행 (에러 무시)
         }
       }
 
@@ -226,7 +228,7 @@ export function VideoStudio() {
         }
       }
 
-      setSubtitles(loaded.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
+      setSubtitles(loaded.map((s) => ({ ...s, heText: s.heText ?? "", viText: s.viText ?? "" })));
     } catch (err: any) {
       setSubtitleLoadError(err?.response?.data?.error ?? "자막 불러오기 실패");
     }
@@ -238,23 +240,39 @@ export function VideoStudio() {
     try {
       const filled = await remotionApi.autoFillHebrew(selectedEpisodeId);
       if (filled.length > 0) {
-        setSubtitles(filled.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
+        setSubtitles(filled.map((s) => ({ ...s, heText: s.heText ?? "", viText: s.viText ?? "" })));
       }
     } catch (err: any) {
       setSubtitleSaveError(err?.response?.data?.error ?? "히브리어 배분 실패");
     }
   }
 
-  // 영어 자막 자동 배분 (SRT_EN → enText)
-  async function handleAutoFillEnglish() {
+  // 베트남어 자막 자동 배분 (SRT_VI → viText)
+  async function handleAutoFillVietnamese() {
     if (!selectedEpisodeId) return;
+    setSubtitleSaveError("");
+    console.log(`[handleAutoFillVietnamese] 시작: selectedEpisodeId=${selectedEpisodeId}`);
+    
     try {
-      const filled = await remotionApi.autoFillEnglish(selectedEpisodeId);
+      const filled = await remotionApi.autoFillVietnamese(selectedEpisodeId);
+      console.log(`[handleAutoFillVietnamese] API 응답:`, filled.length, "개 자막");
+      
       if (filled.length > 0) {
-        setSubtitles(filled.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
+        const processedSubtitles = filled.map((s) => ({ ...s, heText: s.heText ?? "", viText: s.viText ?? "" }));
+        console.log(`[handleAutoFillVietnamese] 처리된 자막 샘플:`, processedSubtitles[0]);
+        setSubtitles(processedSubtitles);
+        
+        // 성공 메시지
+        setSubtitleSaveError("");
+        console.log(`[handleAutoFillVietnamese] 베트남어 자막 ${filled.length}개 배분 완료`);
+      } else {
+        setSubtitleSaveError("베트남어 자막을 가져올 수 없습니다.");
       }
     } catch (err: any) {
-      setSubtitleSaveError(err?.response?.data?.error ?? "영어 배분 실패");
+      const errorMsg = err?.response?.data?.error ?? err.message ?? "베트남어 배분 실패";
+      console.error(`[handleAutoFillVietnamese] 오류:`, err);
+      setSubtitleSaveError(errorMsg);
+      setSubtitleSaveStatus("error");
     }
   }
 
@@ -264,7 +282,7 @@ export function VideoStudio() {
     try {
       const filled = await remotionApi.autoFillKorean(selectedEpisodeId);
       if (filled.length > 0) {
-        setSubtitles(filled.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
+        setSubtitles(filled.map((s) => ({ ...s, heText: s.heText ?? "", viText: s.viText ?? "" })));
       }
     } catch (err: any) {
       setSubtitleSaveError(err?.response?.data?.error ?? "한국어 배분 실패");
@@ -279,7 +297,7 @@ export function VideoStudio() {
     try {
       const filled = await remotionApi.syncAllSubtitles(selectedEpisodeId);
       if (filled.length > 0) {
-        setSubtitles(filled.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
+        setSubtitles(filled.map((s) => ({ ...s, heText: s.heText ?? "", viText: s.viText ?? "" })));
       }
     } catch (err: any) {
       setSubtitleSaveError(err?.response?.data?.error ?? "전체 자막 동기화 실패");
@@ -304,7 +322,7 @@ export function VideoStudio() {
       prev.map((s) => ({
         ...s,
         text:   s.text   ? splitTextAt(s.text,   MAX) : s.text,
-        enText: s.enText ? splitTextAt(s.enText, MAX) : s.enText,
+        viText: s.viText ? splitTextAt(s.viText, MAX) : s.viText,
         heText: s.heText ? splitTextAt(s.heText, MAX) : s.heText,
       }))
     );
@@ -330,7 +348,7 @@ export function VideoStudio() {
   }
 
   // 자막 항목 필드 수정
-  function updateSubtitle(index: number, field: "text" | "heText" | "enText", value: string) {
+  function updateSubtitle(index: number, field: "text" | "heText" | "viText", value: string) {
     setSubtitles((prev) => prev.map((s, i) => i === index ? { ...s, [field]: value } : s));
   }
 
@@ -479,7 +497,7 @@ export function VideoStudio() {
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     try {
       const context = {
-        koreanText, hebrewText, englishText, language,
+        koreanText, hebrewText, vietnameseText, language,
         videoFileName, audioFileName,
         subtitleCount: subtitles.length,
       };
@@ -491,15 +509,15 @@ export function VideoStudio() {
       if (result.type === "action" && result.props) {
         if (result.props.koreanText !== undefined) setKoreanText(result.props.koreanText);
         if (result.props.hebrewText !== undefined) setHebrewText(result.props.hebrewText);
-        if (result.props.englishText !== undefined) setEnglishText(result.props.englishText);
-        if (result.props.language !== undefined) setLanguage(result.props.language as "ko" | "en");
+        if (result.props.vietnameseText !== undefined) setVietnameseText(result.props.vietnameseText);
+        if (result.props.language !== undefined) setLanguage(result.props.language as "ko" | "vi");
         if (result.props.videoFileName !== undefined) setVideoFileName(result.props.videoFileName);
         if (result.props.audioFileName !== undefined) setAudioFileName(result.props.audioFileName);
         // Remotion Studio 즉시 갱신
         sendMutation.mutate({
           koreanText:    result.props.koreanText    ?? koreanText,
           hebrewText:    result.props.hebrewText    ?? hebrewText,
-          englishText:   result.props.englishText   ?? englishText,
+          vietnameseText: result.props.vietnameseText ?? vietnameseText,
           language:      result.props.language      ?? language,
           videoFileName: result.props.videoFileName ?? videoFileName,
           audioFileName: result.props.audioFileName ?? audioFileName,
@@ -557,7 +575,7 @@ export function VideoStudio() {
       const data = await remotionApi.getEpisodeSceneText(selectedEpisodeId, sceneNum);
       if (data.koreanText) setKoreanText(data.koreanText);
       if (data.hebrewText) setHebrewText(data.hebrewText);
-      if (data.englishText) setEnglishText(data.englishText);
+      if (data.vietnameseText) setVietnameseText(data.vietnameseText);
       setVideoFileName(data.videoFileName);
 
       // 씬별 자막 추출 — 해당 씬의 타이밍 항목만 필터링 후 t=0 기준으로 re-offset
@@ -586,7 +604,7 @@ export function VideoStudio() {
       sendMutation.mutate({
         koreanText: data.koreanText,
         hebrewText: data.hebrewText,
-        englishText: data.englishText,
+        vietnameseText: data.vietnameseText,
         language,
         videoFileName: data.videoFileName,
         audioFileName,
@@ -602,27 +620,53 @@ export function VideoStudio() {
     }
   }
 
-  // 영어 나레이션 TTS 생성
-  async function handleGenerateEnglishNarration() {
+  // 베트남어 나레이션 TTS 생성
+  async function handleGenerateVietnameseNarration() {
     if (!selectedEpisodeId) return;
     setEnNarrationStatus("generating");
     setEnNarrationError("");
     try {
-      const result = await remotionApi.generateEnglishNarration(selectedEpisodeId, narrationSpeed !== 1.0 ? narrationSpeed : undefined);
+      // 먼저 베트남어 자막을 자동으로 채움
+      try {
+        const filled = await remotionApi.autoFillVietnamese(selectedEpisodeId);
+        if (filled.length > 0) {
+          setSubtitles(filled.map((s) => ({ ...s, heText: s.heText ?? "", viText: s.viText ?? "" })));
+        }
+      } catch {
+        // 베트남어 자막 채우기 실패해도 계속 진행
+      }
+      
+      const result = await remotionApi.generateVietnameseNarration(selectedEpisodeId, narrationSpeed !== 1.0 ? narrationSpeed : undefined);
       setAudioFileName(result.fileName);
       if (result.durationSec) setEnNarrationDuration(result.durationSec);
       if (result.subtitlesJson) {
         try {
           const parsed = JSON.parse(result.subtitlesJson) as SubEntry[];
-          setSubtitles(parsed.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" })));
+          // 베트남어 자막이 있는지 확인하고 없으면 다시 채우기
+          const hasViText = parsed.some(s => s.viText && s.viText.trim() !== "");
+          if (!hasViText && selectedEpisodeId) {
+            const filled = await remotionApi.autoFillVietnamese(selectedEpisodeId);
+            if (filled.length > 0) {
+              setSubtitles(filled.map((s) => ({ ...s, heText: s.heText ?? "", viText: s.viText ?? "" })));
+            }
+          } else {
+            setSubtitles(parsed.map((s) => ({ ...s, heText: s.heText ?? "", viText: s.viText ?? "" })));
+          }
         } catch {}
       }
       setEnNarrationStatus("done");
+      setLanguage("vi"); // 언어를 베트남어로 설정
       refetchAudios();
+      
+      // 베트남어 자막과 함께 전송
+      const currentSubs = await remotionApi.getSubtitles();
+      const subtitlesJson = JSON.stringify(currentSubs);
+      
       sendMutation.mutate({
-        koreanText, hebrewText, englishText, language: "en",
+        koreanText, hebrewText, vietnameseText, language: "vi",
         videoFileName, audioFileName: result.fileName,
         episodeId: selectedEpisodeId || undefined,
+        subtitlesJson,
         showSubtitle,
         showNarration,
       });
@@ -806,7 +850,14 @@ export function VideoStudio() {
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  const canSend = (language === "ko" ? koreanText.trim() : englishText.trim()) && hebrewText.trim();
+  // 페이지 로드 시 기존 렌더 파일 존재 여부 자동 확인
+  useEffect(() => {
+    remotionApi.getRenderStatus().then((status) => {
+      if (status.fileReady) setRenderStatus(status);
+    }).catch(() => {});
+  }, []);
+
+  const canSend = (language === "ko" ? koreanText.trim() : vietnameseText.trim()) && hebrewText.trim();
   const isRendering = renderStatus?.status === "rendering" || renderMutation.isPending;
 
   return (
@@ -926,12 +977,12 @@ export function VideoStudio() {
                     try {
                       const filled = await remotionApi.autoFillKorean(selectedEpisodeId);
                       if (filled.length > 0) {
-                        subs = filled.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" }));
+                        subs = filled.map((s) => ({ ...s, heText: s.heText ?? "", viText: s.viText ?? "" }));
                         setSubtitles(subs);
                       }
                     } catch { /* SRT_KO 없으면 무시 */ }
                   }
-                  sendMutation.mutate({ koreanText, hebrewText, englishText, language: "ko", videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration });
+                  sendMutation.mutate({ koreanText, hebrewText, vietnameseText, language: "ko", videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration, fontSizeScale });
                 }}
                 className={`flex-1 py-2 rounded-xl text-xs font-body border transition-all ${language === "ko" ? "border-amber-400/60 text-amber-200" : "border-white/20 text-white/50 hover:text-white/80"}`}
                 style={{ background: language === "ko" ? "rgba(180,120,0,0.28)" : "rgba(255,255,255,0.07)" }}
@@ -940,24 +991,24 @@ export function VideoStudio() {
               </button>
               <button
                 onClick={async () => {
-                  setLanguage("en");
-                  // enText가 없으면 SRT_EN에서 자동 배분
+                  setLanguage("vi");
+                  // viText가 없으면 SRT_VI에서 자동 배분
                   let subs = subtitles;
-                  if (subtitles.length > 0 && subtitles.every((s) => !s.enText) && selectedEpisodeId) {
+                  if (subtitles.length > 0 && subtitles.every((s) => !s.viText) && selectedEpisodeId) {
                     try {
-                      const filled = await remotionApi.autoFillEnglish(selectedEpisodeId);
+                      const filled = await remotionApi.autoFillVietnamese(selectedEpisodeId);
                       if (filled.length > 0) {
-                        subs = filled.map((s) => ({ ...s, heText: s.heText ?? "", enText: s.enText ?? "" }));
+                        subs = filled.map((s) => ({ ...s, heText: s.heText ?? "", viText: s.viText ?? "" }));
                         setSubtitles(subs);
                       }
-                    } catch { /* SRT_EN 없으면 무시 */ }
+                    } catch { /* SRT_VI 없으면 무시 */ }
                   }
-                  sendMutation.mutate({ koreanText, hebrewText, englishText, language: "en", videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration });
+                  sendMutation.mutate({ koreanText, hebrewText, vietnameseText, language: "vi", videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration, fontSizeScale });
                 }}
-                className={`flex-1 py-2 rounded-xl text-xs font-body border transition-all ${language === "en" ? "border-blue-400/60 text-blue-200" : "border-white/20 text-white/50 hover:text-white/80"}`}
-                style={{ background: language === "en" ? "rgba(30,80,200,0.28)" : "rgba(255,255,255,0.07)" }}
+                className={`flex-1 py-2 rounded-xl text-xs font-body border transition-all ${language === "vi" ? "border-blue-400/60 text-blue-200" : "border-white/20 text-white/50 hover:text-white/80"}`}
+                style={{ background: language === "vi" ? "rgba(30,80,200,0.28)" : "rgba(255,255,255,0.07)" }}
               >
-                🇺🇸 English
+                🇻🇳 Vietnamese
               </button>
             </div>
           </section>
@@ -970,7 +1021,7 @@ export function VideoStudio() {
                 onClick={() => {
                   const next = !showSubtitle;
                   setShowSubtitle(next);
-                  sendMutation.mutate({ koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle: next, showNarration });
+                  sendMutation.mutate({ koreanText, hebrewText, vietnameseText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle: next, showNarration, fontSizeScale });
                 }}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs border transition-all ${showSubtitle ? "border-emerald-400/50 text-emerald-300" : "border-white/20 text-white/40"}`}
                 style={{ background: showSubtitle ? "rgba(0,180,80,0.18)" : "rgba(255,255,255,0.06)" }}
@@ -982,7 +1033,7 @@ export function VideoStudio() {
                 onClick={() => {
                   const next = !showNarration;
                   setShowNarration(next);
-                  sendMutation.mutate({ koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration: next });
+                  sendMutation.mutate({ koreanText, hebrewText, vietnameseText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration: next, fontSizeScale });
                 }}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs border transition-all ${showNarration ? "border-emerald-400/50 text-emerald-300" : "border-white/20 text-white/40"}`}
                 style={{ background: showNarration ? "rgba(0,180,80,0.18)" : "rgba(255,255,255,0.06)" }}
@@ -991,6 +1042,63 @@ export function VideoStudio() {
                 나레이션 {showNarration ? "켜짐" : "꺼짐"}
               </button>
             </div>
+            
+            {/* 자막 크기 조절 */}
+            {showSubtitle && (
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-white/60">자막 크기</span>
+                  <span className="text-amber-300">{fontSizeScale}%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const newScale = Math.max(50, fontSizeScale - 10);
+                      setFontSizeScale(newScale);
+                      sendMutation.mutate({ koreanText, hebrewText, vietnameseText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration, fontSizeScale: newScale });
+                    }}
+                    className="px-2 py-1 text-xs border border-white/20 rounded-lg hover:bg-white/10"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="range"
+                    min="50"
+                    max="150"
+                    value={fontSizeScale}
+                    onChange={(e) => {
+                      const newScale = Number(e.target.value);
+                      setFontSizeScale(newScale);
+                      // Send update immediately on change
+                      sendMutation.mutate({ koreanText, hebrewText, vietnameseText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration, fontSizeScale: newScale });
+                    }}
+                    className="flex-1 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                    style={{
+                      background: `linear-gradient(to right, rgba(251,191,36,0.5) 0%, rgba(251,191,36,0.5) ${(fontSizeScale - 50)}%, rgba(255,255,255,0.2) ${(fontSizeScale - 50)}%, rgba(255,255,255,0.2) 100%)`
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const newScale = Math.min(150, fontSizeScale + 10);
+                      setFontSizeScale(newScale);
+                      sendMutation.mutate({ koreanText, hebrewText, vietnameseText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration, fontSizeScale: newScale });
+                    }}
+                    className="px-2 py-1 text-xs border border-white/20 rounded-lg hover:bg-white/10"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFontSizeScale(100);
+                      sendMutation.mutate({ koreanText, hebrewText, vietnameseText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration, fontSizeScale: 100 });
+                    }}
+                    className="px-2 py-1 text-xs border border-white/20 rounded-lg hover:bg-white/10"
+                  >
+                    초기화
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
 
           {/* 자막 텍스트 */}
@@ -1012,13 +1120,13 @@ export function VideoStudio() {
               </div>
             ) : (
               <div>
-                <label className="block text-xs text-white/60 mb-1">English</label>
+                <label className="block text-xs text-white/60 mb-1">Vietnamese</label>
                 <textarea
                   rows={3}
                   className="w-full rounded-xl px-3 py-2 text-sm text-white/90 resize-none focus:outline-none border border-white/25 focus:border-white/50 transition-colors" style={{ background: "rgba(255,255,255,0.10)", backdropFilter: "blur(8px)" }}
                   placeholder="e.g. In the beginning God created the heavens and the earth."
-                  value={englishText}
-                  onChange={(e) => setEnglishText(e.target.value)}
+                  value={vietnameseText}
+                  onChange={(e) => setVietnameseText(e.target.value)}
                 />
               </div>
             )}
@@ -1172,16 +1280,16 @@ export function VideoStudio() {
               ) : (
                 <>
                   <button
-                    onClick={handleGenerateEnglishNarration}
+                    onClick={handleGenerateVietnameseNarration}
                     disabled={enNarrationStatus === "generating" || !selectedEpisodeId}
                     className="w-full flex items-center justify-center gap-2 px-3 py-2 disabled:opacity-40 disabled:cursor-not-allowed text-blue-200 border border-blue-400/35 rounded-xl text-xs font-body transition-all shadow-[0px_2px_12px_rgba(0,0,0,0.15)]"
                     style={{ background: "rgba(30,80,200,0.18)", backdropFilter: "blur(12px)" }}
                     title={!selectedEpisodeId ? "에피소드를 먼저 선택하세요" : ""}
                   >
                     {enNarrationStatus === "generating" ? (
-                      <><Loader2 size={12} className="animate-spin" /> English 나레이션 생성 중…</>
+                      <><Loader2 size={12} className="animate-spin" /> Vietnamese 나레이션 생성 중…</>
                     ) : (
-                      <><Mic size={12} /> 🇺🇸 English Narration (TTS)</>
+                      <><Mic size={12} /> 🇻🇳 Vietnamese Narration (TTS)</>
                     )}
                   </button>
                   {enNarrationStatus === "done" && (
@@ -1595,7 +1703,7 @@ export function VideoStudio() {
           <div className="space-y-2">
             {/* 스튜디오 전송 */}
             <button
-              onClick={() => sendMutation.mutate({ koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration })}
+              onClick={() => sendMutation.mutate({ koreanText, hebrewText, vietnameseText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration })}
               disabled={!canSend || sendMutation.isPending}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 disabled:opacity-40 disabled:cursor-not-allowed text-amber-200 border border-amber-300/40 rounded-2xl text-sm font-body transition-all shadow-[0px_4px_24px_rgba(0,0,0,0.20)] hover:shadow-[0px_4px_32px_rgba(180,120,0,0.30)]"
               style={{ background: "rgba(180,120,0,0.22)", backdropFilter: "blur(14px)" }}
@@ -1631,10 +1739,11 @@ export function VideoStudio() {
               </div>
             )}
 
-            {/* 다운로드 */}
-            {renderStatus?.status === "done" && (
+            {/* 다운로드 — 렌더 완료 또는 기존 파일 존재 시 표시 */}
+            {(renderStatus?.status === "done" || renderStatus?.fileReady) && (
               <a
                 href={remotionApi.downloadUrl()}
+                download="HebrewBibleAnimationStudio.mp4"
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-emerald-200 border border-emerald-400/40 rounded-2xl text-sm font-body transition-all shadow-[0px_4px_24px_rgba(0,0,0,0.20)] hover:shadow-[0px_4px_32px_rgba(0,200,120,0.25)]"
                 style={{ background: "rgba(0,140,80,0.22)", backdropFilter: "blur(14px)" }}
               >
@@ -1861,12 +1970,32 @@ export function VideoStudio() {
                     <button
                       onClick={handleSyncAllSubtitles}
                       disabled={subtitleLoading}
-                      title="HE+KO+EN 3종 자막을 동일한 씬 경계로 일괄 동기화 (히브리어 성경·한국어·영어 정렬 보장)"
+                      title="HE+KO+VI 3종 자막을 동일한 씬 경계로 일괄 동기화 (히브리어 성경·한국어·베트남어 정렬 보장)"
                       className="flex items-center gap-1 text-xs text-emerald-300/80 hover:text-emerald-200 transition-colors px-2 py-1.5 border border-emerald-400/30 rounded-lg disabled:opacity-40"
                       style={{ background: "rgba(0,180,100,0.12)" }}
                     >
                       {subtitleLoading ? <><Loader2 size={10} className="animate-spin" /> 동기화 중…</> : "🔄 전체 자막 동기화"}
                     </button>
+                  )}
+                  {selectedEpisodeId && (
+                    <button
+                      onClick={handleAutoFillVietnamese}
+                      disabled={subtitleLoading}
+                      title="SRT_VI에서 베트남어 자막 자동 배분"
+                      className="flex items-center gap-1 text-xs text-blue-300/80 hover:text-blue-200 transition-colors px-2 py-1.5 border border-blue-400/30 rounded-lg disabled:opacity-40"
+                      style={{ background: "rgba(30,80,200,0.12)" }}
+                    >
+                      {subtitleLoading ? <><Loader2 size={10} className="animate-spin" /> 배분 중…</> : "🇻🇳 베트남어 배분"}
+                    </button>
+                  )}
+                  {/* 베트남어 배분 에러 메시지 */}
+                  {subtitleSaveError && subtitleSaveError.includes("SRT_VI") && (
+                    <div className="text-xs text-red-300 px-2 py-1 border border-red-400/20 rounded bg-red-400/10 max-w-md">
+                      <div className="font-semibold mb-1">⚠ 베트남어 자막 생성 필요</div>
+                      <div className="text-red-200/80 text-xs leading-relaxed whitespace-pre-line">
+                        {subtitleSaveError}
+                      </div>
+                    </div>
                   )}
                   {subtitles.length > 0 && (
                     <button
@@ -1925,7 +2054,7 @@ export function VideoStudio() {
                     const sceneEntries = indices.map((idx) => subtitles[idx]);
                     const allHe = sceneEntries.map((s) => s.heText ?? "").filter(Boolean).join(" ");
                     const allKo = sceneEntries.map((s) => s.text).filter(Boolean).join(" ");
-                    const allEn = sceneEntries.map((s) => s.enText ?? "").filter(Boolean).join(" ");
+                    const allVi = sceneEntries.map((s) => s.viText ?? "").filter(Boolean).join(" ");
                     const timeStart = sceneEntries[0]?.startSec ?? 0;
                     const timeEnd = sceneEntries[sceneEntries.length - 1]?.endSec ?? 0;
                     return (
@@ -1971,12 +2100,19 @@ export function VideoStudio() {
                           </div>
                           {/* 영어 전체 */}
                           <div className="space-y-1">
-                            <label className="block text-xs text-blue-300/50 font-body">🇺🇸 English</label>
+                            <label className="block text-xs text-blue-300/50 font-body">🇻🇳 Vietnamese</label>
                             <div
                               className="text-sm text-blue-100/75 p-2 rounded-lg min-h-[60px] leading-relaxed border border-blue-400/15"
                               style={{ background: "rgba(30,80,200,0.08)" }}
                             >
-                              {allEn || <span className="text-white/25 italic text-xs">없음</span>}
+                              {allVi || (
+                                <div className="space-y-1">
+                                  <span className="text-white/25 italic text-xs">없음</span>
+                                  <div className="text-xs text-blue-300/60">
+                                    💡 "🇻🇳 베트남어 배분" 버튼을 클릭하여 SRT_VI에서 자동으로 가져오세요.
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -2024,9 +2160,9 @@ export function VideoStudio() {
                                       rows={1}
                                       className="w-full rounded-lg px-2 py-1 text-xs text-blue-100/70 resize-none focus:outline-none border border-blue-400/15 focus:border-blue-400/35 transition-colors"
                                       style={{ background: "rgba(30,80,200,0.06)" }}
-                                      value={sub.enText ?? ""}
-                                      onChange={(e) => updateSubtitle(idx, "enText", e.target.value)}
-                                      placeholder="English"
+                                      value={sub.viText ?? ""}
+                                      onChange={(e) => updateSubtitle(idx, "viText", e.target.value)}
+                                      placeholder="Vietnamese"
                                     />
                                   </div>
                                 </div>
@@ -2105,14 +2241,14 @@ export function VideoStudio() {
 
                           {/* 영어 */}
                           <div>
-                            <label className="block text-xs text-blue-300/50 mb-1">🇺🇸 English</label>
+                            <label className="block text-xs text-blue-300/50 mb-1">🇻🇳 Vietnamese</label>
                             <textarea
                               rows={2}
                               className="w-full rounded-xl px-3 py-1.5 text-sm text-blue-100/75 resize-none focus:outline-none leading-relaxed border border-blue-400/20 focus:border-blue-400/45 transition-colors"
                               style={{ background: "rgba(30,80,200,0.08)", backdropFilter: "blur(8px)" }}
-                              value={sub.enText ?? ""}
-                              onChange={(e) => updateSubtitle(i, "enText", e.target.value)}
-                              placeholder="English subtitle"
+                              value={sub.viText ?? ""}
+                              onChange={(e) => updateSubtitle(i, "viText", e.target.value)}
+                              placeholder="Vietnamese subtitle"
                             />
                           </div>
                         </div>

@@ -16,8 +16,8 @@ const RENDER_SERVER =
 export interface RemotionProps {
   koreanText: string;
   hebrewText: string;
-  englishText?: string;
-  language?: "ko" | "en";
+  vietnameseText?: string;
+  language?: "ko" | "vi";
   videoFileName?: string;
   audioFileName?: string;
   episodeId?: string;
@@ -26,6 +26,7 @@ export interface RemotionProps {
   showNarration?: boolean;
   bgmFileName?: string;   // BGM 파일명 (public/ 기준)
   bgmVolume?: number;     // 0.0 ~ 1.0
+  fontSizeScale?: number;  // 50-150 (percent)
 }
 
 // ─── data.json 읽기/쓰기 ─────────────────────────────────────────────────────
@@ -46,7 +47,7 @@ export function writeProps(props: RemotionProps, durationInFrames?: number): voi
   const payload: Record<string, unknown> = {
     koreanText: props.koreanText,
     hebrewText: props.hebrewText,
-    englishText: props.englishText ?? "",
+    vietnameseText: props.vietnameseText ?? "",
     language: props.language ?? "ko",
     videoFileName: props.videoFileName ?? "",
     audioFileName: props.audioFileName ?? "narration.mp3",
@@ -55,6 +56,7 @@ export function writeProps(props: RemotionProps, durationInFrames?: number): voi
     showNarration: props.showNarration ?? true,
     bgmFileName,
     bgmVolume,
+    fontSizeScale: props.fontSizeScale ?? 100,
   };
   if (props.episodeId) payload.episodeId = props.episodeId;
   fs.writeFileSync(dataPath, JSON.stringify(payload, null, 2), "utf-8");
@@ -70,7 +72,7 @@ function updateRootDefaultProps(props: RemotionProps, durationInFrames = 150): v
 
   const ko = JSON.stringify(props.koreanText);
   const he = JSON.stringify(props.hebrewText);
-  const en = JSON.stringify(props.englishText ?? "");
+  const vi = JSON.stringify(props.vietnameseText ?? "");
   const langVal = props.language ?? "ko";
   const lang = `"${langVal}" as const`;
   const vf = JSON.stringify(props.videoFileName ?? "");
@@ -80,6 +82,7 @@ function updateRootDefaultProps(props: RemotionProps, durationInFrames = 150): v
   const showNarr = props.showNarration !== false;
   const bmf = JSON.stringify(props.bgmFileName ?? "");
   const bmv = typeof props.bgmVolume === "number" ? props.bgmVolume : 0.15;
+  const fss = typeof props.fontSizeScale === "number" ? props.fontSizeScale : 100;
 
   const content = `import React from 'react';
 import { Composition } from 'remotion';
@@ -88,7 +91,7 @@ import { HelloWorld, myCompSchema } from './HelloWorld';
 const defaultProps = {
   koreanText: ${ko},
   hebrewText: ${he},
-  englishText: ${en},
+  vietnameseText: ${vi},
   language: ${lang},
   videoFileName: ${vf},
   audioFileName: ${af},
@@ -97,6 +100,7 @@ const defaultProps = {
   showNarration: ${showNarr},
   bgmFileName: ${bmf},
   bgmVolume: ${bmv},
+  fontSizeScale: ${fss},
 };
 
 export const RemotionRoot: React.FC = () => {
@@ -366,7 +370,7 @@ export function getDownloadUrl(): string {
 
 export async function getEpisodeSubtitle(
   episodeId: string
-): Promise<{ koreanText: string; hebrewText: string; englishText: string }> {
+): Promise<{ koreanText: string; hebrewText: string; vietnameseText: string }> {
   const episode = await prisma.episode.findUnique({
     where: { id: episodeId },
     include: { contents: { orderBy: { createdAt: "desc" } } },
@@ -375,7 +379,7 @@ export async function getEpisodeSubtitle(
 
   let koreanText = "";
   let hebrewText = "";
-  let englishText = "";
+  let vietnameseText = "";
 
   // ── 한국어: SCRIPT 나레이션(KO) → SRT_KO → 에피소드 제목 ─────────────────
   const scriptContent = episode.contents.find((c) => c.contentType === "SCRIPT");
@@ -409,23 +413,23 @@ export async function getEpisodeSubtitle(
   // 최종 fallback: titleHe
   if (!hebrewText) hebrewText = episode.titleHe ?? "";
 
-  // ── 영어: SRT_EN → SCRIPT EN 나레이션 → titleKo 번역 없으므로 빈 문자열 ─
-  const srtEn = episode.contents.find((c) => c.contentType === "SRT_EN");
-  if (srtEn?.content) {
-    englishText = srtSingleText(srtEn.content);
+  // ── 베트남어: SRT_VI → SCRIPT VI 나레이션 → titleKo 번역 없으므로 빈 문자열 ─
+  const srtVi = episode.contents.find((c) => c.contentType === "SRT_VI");
+  if (srtVi?.content) {
+    vietnameseText = srtSingleText(srtVi.content);
   }
-  if (!englishText && scriptContent?.content) {
-    englishText = extractAllEnglishNarration(scriptContent.content);
+  if (!vietnameseText && scriptContent?.content) {
+    vietnameseText = extractAllVietnameseNarration(scriptContent.content);
   }
 
   console.log(`[Remotion] 에피소드 ${episodeId} 자막 추출:`, {
     koLen: koreanText.length,
     heLen: hebrewText.length,
-    enLen: englishText.length,
+    viLen: vietnameseText.length,
     hePreview: hebrewText.slice(0, 40),
   });
 
-  return { koreanText, hebrewText, englishText };
+  return { koreanText, hebrewText, vietnameseText };
 }
 
 // ─── 씬별 자막 텍스트 추출 (VideoStudio 씬 선택용) ──────────────────────────
@@ -433,7 +437,7 @@ export async function getEpisodeSubtitle(
 export async function getEpisodeSceneText(
   episodeId: string,
   sceneNumber: number
-): Promise<{ koreanText: string; hebrewText: string; englishText: string; videoFileName: string }> {
+): Promise<{ koreanText: string; hebrewText: string; vietnameseText: string; videoFileName: string }> {
   const episode = await prisma.episode.findUnique({
     where: { id: episodeId },
     include: { contents: { orderBy: { createdAt: "desc" } } },
@@ -443,12 +447,12 @@ export async function getEpisodeSceneText(
   const contents = episode.contents;
   const srtKo = contents.find((c) => c.contentType === "SRT_KO");
   const srtHe = contents.find((c) => c.contentType === "SRT_HE");
-  const srtEn = contents.find((c) => c.contentType === "SRT_EN");
+  const srtVi = contents.find((c) => c.contentType === "SRT_VI");
   const script = contents.find((c) => c.contentType === "SCRIPT");
 
   let koreanText = srtKo?.content ? extractSrtSceneText(srtKo.content, sceneNumber) : "";
   let hebrewText = srtHe?.content ? extractSrtSceneText(srtHe.content, sceneNumber) : "";
-  let englishText = srtEn?.content ? extractSrtSceneText(srtEn.content, sceneNumber) : "";
+  let vietnameseText = srtVi?.content ? extractSrtSceneText(srtVi.content, sceneNumber) : "";
 
   // SRT에서 못 찾은 경우 SCRIPT에서 추출
   if ((!koreanText || !hebrewText) && script?.content) {
@@ -463,7 +467,7 @@ export async function getEpisodeSceneText(
 
   const videoFileName = `preview_keyframe_${sceneNumber}.png`;
 
-  return { koreanText, hebrewText, englishText, videoFileName };
+  return { koreanText, hebrewText, vietnameseText, videoFileName };
 }
 
 /** SRT 문자열 → 텍스트만 추출 (타임코드·인덱스 제거) */
@@ -773,17 +777,17 @@ async function buildVerseSubtitlePairs(
   }
 }
 
-/** SCRIPT에서 영어 나레이션(EN) 라인 전체 추출 */
-export function extractAllEnglishNarration(script: string): string {
+/** SCRIPT에서 베트남어 나레이션(VI) 라인 전체 추출 */
+export function extractAllVietnameseNarration(script: string): string {
   if (!script) return "";
   const cleaned = script.replace(/\*\*/g, "");
-  // "Narration(EN):", "나레이션(EN):", "Narration:" 등 다양한 표기 지원
+  // "Narration(VI):", "나레이션(VI):", "Narration:" 등 다양한 표기 지원
   const matches = cleaned.match(
-    /(?:Narration|나레이션)\s*[\(（]?\s*EN\s*[\)）]?\s*[:\-]\s*(.+)/gi
+    /(?:Narration|나레이션)\s*[\(（]?\s*VI\s*[\)）]?\s*[:\-]\s*(.+)/gi
   ) ?? [];
   if (matches.length > 0) {
     return matches
-      .map((m) => m.replace(/(?:Narration|나레이션)\s*[\(（]?\s*EN\s*[\)）]?\s*[:\-]\s*/i, "").trim())
+      .map((m) => m.replace(/(?:Narration|나레이션)\s*[\(（]?\s*VI\s*[\)）]?\s*[:\-]\s*/i, "").trim())
       .filter(Boolean)
       .join(" ");
   }
@@ -1363,29 +1367,29 @@ export async function distributeEnglishForEpisode(episodeId: string): Promise<Su
   const existing: SubtitleTiming[] = JSON.parse(fs.readFileSync(subtitlesPath, "utf-8"));
   if (!Array.isArray(existing) || existing.length === 0) throw new Error("자막 항목이 없습니다.");
 
-  const srtEn = episode.contents.find((c) => c.contentType === "SRT_EN");
-  if (!srtEn?.content) throw new Error("SRT_EN 컨텐츠가 없습니다. 에피소드 상세 페이지에서 SRT 3종을 먼저 생성하세요.");
+  const srtVi = episode.contents.find((c) => c.contentType === "SRT_VI");
+  if (!srtVi?.content) throw new Error("SRT_VI 컨텐츠가 없습니다. 에피소드 상세 페이지에서 SRT 3종을 먼저 생성하세요.");
 
-  const englishScenes = extractSrtAllScenes(srtEn.content);
-  if (!englishScenes.length) throw new Error("SRT_EN에서 텍스트를 추출할 수 없습니다.");
+  const vietnameseScenes = extractSrtAllScenes(srtVi.content);
+  if (!vietnameseScenes.length) throw new Error("SRT_VI에서 텍스트를 추출할 수 없습니다.");
 
   const totalDuration = existing[existing.length - 1].endSec;
-  const N = englishScenes.length;
+  const N = vietnameseScenes.length;
   const n = existing.length;
 
   let updated: SubtitleTiming[];
-  // N=1이면 전체 영어 텍스트를 단어 단위로 분할해 나레이션 타이밍과 동기화
+  // N=1이면 전체 베트남어 텍스트를 단어 단위로 분할해 나레이션 타이밍과 동기화
   if (N === 1 && n > 1) {
-    const enChunks = expandSceneToChunks(englishScenes[0], n, 40);
-    updated = existing.map((t, i) => ({ ...t, enText: enChunks[i] ?? "" }));
-    console.log(`[Subtitle] 영어 배분(SRT_EN 단어분할, ${n}개) 완료`);
+    const viChunks = expandSceneToChunks(vietnameseScenes[0], n, 40);
+    updated = existing.map((t, i) => ({ ...t, viText: viChunks[i] ?? "" }));
+    console.log(`[Subtitle] 베트남어 배분(SRT_VI 단어분할, ${n}개) 완료`);
   } else {
     const segDur = totalDuration / N;
     updated = existing.map((t) => {
       const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), N - 1) : 0;
-      return { ...t, enText: englishScenes[sIdx] ?? "" };
+      return { ...t, viText: vietnameseScenes[sIdx] ?? "" };
     });
-    console.log(`[Subtitle] 영어 배분(SRT_EN ${N}씬) 완료: ${updated.filter((s) => s.enText).length}개 항목`);
+    console.log(`[Subtitle] 베트남어 배분(SRT_VI ${N}씬) 완료: ${updated.filter((s) => s.viText).length}개 항목`);
   }
 
   const subtitlesJson = JSON.stringify(updated);
@@ -1394,12 +1398,72 @@ export async function distributeEnglishForEpisode(episodeId: string): Promise<Su
   return updated;
 }
 
-// ─── HE + KO + EN 3종 자막 동시 배분 (씬 경계 완전 일치) ────────────────────────
+// ─── 기존 자막에 베트남어(SRT_VI) 자동 배분 ──────────────────────────────────
+
+export async function distributeVietnameseForEpisode(episodeId: string): Promise<SubtitleTiming[]> {
+  console.log(`[distributeVietnameseForEpisode] 시작: episodeId=${episodeId}`);
+  
+  const episode = await prisma.episode.findUnique({
+    where: { id: episodeId },
+    include: { contents: { orderBy: { createdAt: "desc" } } },
+  });
+  if (!episode) {
+    console.error(`[distributeVietnameseForEpisode] 에피소드를 찾을 수 없음: ${episodeId}`);
+    throw new Error("Episode not found");
+  }
+  
+  console.log(`[distributeVietnameseForEpisode] 에피소드 찾음: ${episode.titleKo}, contents: ${episode.contents.length}개`);
+  const contentTypes = episode.contents.map(c => c.contentType);
+  console.log(`[distributeVietnameseForEpisode] 컨텐츠 타입들: ${contentTypes.join(', ')}`);
+
+  const subtitlesPath = path.join(PROJECT_PATH, "public", "subtitles.json");
+  if (!fs.existsSync(subtitlesPath)) throw new Error("subtitles.json 파일이 없습니다. 나레이션을 먼저 생성하세요.");
+
+  const existing: SubtitleTiming[] = JSON.parse(fs.readFileSync(subtitlesPath, "utf-8"));
+  if (!Array.isArray(existing) || existing.length === 0) throw new Error("자막 항목이 없습니다.");
+
+  const srtVi = episode.contents.find((c) => c.contentType === "SRT_VI");
+  if (!srtVi?.content) {
+    console.error(`[distributeVietnameseForEpisode] SRT_VI 컨텐츠가 없음`);
+    throw new Error("SRT_VI 컨텐츠가 없습니다.\n\n해결 방법:\n1. '스튜디오로 돌아가기' 클릭\n2. 상단 '에피소드' 탭으로 이동\n3. 해당 에피소드 선택 → 'SRT 자막 생성' 클릭\n4. 생성 완료 후 다시 VideoStudio에서 자막 편집");
+  }
+  
+  console.log(`[distributeVietnameseForEpisode] SRT_VI 찾음: ${srtVi.content.length}자`);
+
+  const vietnameseScenes = extractSrtAllScenes(srtVi.content);
+  if (!vietnameseScenes.length) throw new Error("SRT_VI에서 텍스트를 추출할 수 없습니다.");
+
+  const totalDuration = existing[existing.length - 1].endSec;
+  const N = vietnameseScenes.length;
+  const n = existing.length;
+
+  let updated: SubtitleTiming[];
+  // N=1이면 전체 베트남어 텍스트를 단어 단위로 분할해 나레이션 타이밍과 동기화
+  if (N === 1 && n > 1) {
+    const viChunks = expandSceneToChunks(vietnameseScenes[0], n, 40);
+    updated = existing.map((t, i) => ({ ...t, viText: viChunks[i] ?? "" }));
+    console.log(`[Subtitle] 베트남어 배분(SRT_VI 단어분할, ${n}개) 완료`);
+  } else {
+    const segDur = totalDuration / N;
+    updated = existing.map((t) => {
+      const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), N - 1) : 0;
+      return { ...t, viText: vietnameseScenes[sIdx] ?? "" };
+    });
+    console.log(`[Subtitle] 베트남어 배분(SRT_VI ${N}씬) 완료: ${updated.filter((s) => s.viText).length}개 항목`);
+  }
+
+  const subtitlesJson = JSON.stringify(updated);
+  fs.writeFileSync(subtitlesPath, subtitlesJson, "utf-8");
+  writeProps({ ...(readProps() ?? { koreanText: "", hebrewText: "" }), subtitlesJson }, readDurationInFrames());
+  return updated;
+}
+
+// ─── HE + KO + VI 3종 자막 동시 배분 (씬 경계 완전 일치) ────────────────────────
 
 /**
- * SRT_HE / SRT_KO / SRT_EN을 동일한 씬 경계로 subtitles.json에 배분.
- * SRT_HE 씬 수를 기준으로 삼아 Korean·English도 동일 시간 구간에 맞춤 →
- * 히브리어 N씬 = 한국어 N씬 = 영어 N씬 보장.
+ * SRT_HE / SRT_KO / SRT_VI을 동일한 씬 경계로 subtitles.json에 배분.
+ * SRT_HE 씬 수를 기준으로 삼아 Korean·Vietnamese도 동일 시간 구간에 맞춤 →
+ * 히브리어 N씬 = 한국어 N씬 = 베트남어 N씬 보장.
  */
 /**
  * 단일 씬 텍스트를 n개 항목에 단어 단위로 균등 분할 (≤maxChars 기준)
@@ -1431,14 +1495,14 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
 
   const srtKo = episode.contents.find((c) => c.contentType === "SRT_KO");
   const srtHe = episode.contents.find((c) => c.contentType === "SRT_HE");
-  const srtEn = episode.contents.find((c) => c.contentType === "SRT_EN");
+  const srtVi = episode.contents.find((c) => c.contentType === "SRT_VI");
 
   const koScenes = srtKo?.content ? extractSrtAllScenes(srtKo.content) : [];
   const heScenes = srtHe?.content ? extractSrtAllScenes(srtHe.content) : [];
-  const enScenes = srtEn?.content ? extractSrtAllScenes(srtEn.content) : [];
+  const viScenes = srtVi?.content ? extractSrtAllScenes(srtVi.content) : [];
 
   // SRT_HE(BibleVerse 기반) 씬 수를 기준으로 삼음. 없으면 KO 씬 수 사용
-  const refCount = heScenes.length || koScenes.length || enScenes.length;
+  const refCount = heScenes.length || koScenes.length || viScenes.length;
   if (refCount === 0) throw new Error("SRT 컨텐츠가 없습니다. SRT 3종을 먼저 생성하세요.");
 
   const totalDuration = existing[existing.length - 1].endSec;
@@ -1450,7 +1514,7 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
 
   let koChunks: string[] | null = null;
   let heChunks: string[] | null = null;
-  let enChunks: string[] | null = null;
+  let viChunks: string[] | null = null;
 
   if (singleScene) {
     if (koScenes.length === 1 && koScenes[0]) {
@@ -1484,10 +1548,10 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
     } else if (heScenes.length === 1 && heScenes[0]) {
       heChunks = Array(n).fill(cleanHebrewForDisplay(heScenes[0]));
     }
-    if (enScenes.length === 1 && enScenes[0]) {
-      enChunks = expandSceneToChunks(enScenes[0], n, 40);
+    if (viScenes.length === 1 && viScenes[0]) {
+      viChunks = expandSceneToChunks(viScenes[0], n, 40);
     }
-    console.log(`[Subtitle] 단일씬→분할: KO ${n}개, HE ${heChunks?.length ?? 0}개, EN ${n}개`);
+    console.log(`[Subtitle] 단일씬→분할: KO ${n}개, HE ${heChunks?.length ?? 0}개, VI ${n}개`);
   }
 
   const segDur = totalDuration / refCount;
@@ -1566,12 +1630,12 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
       entry.heText = heScenes[sIdx] ?? "";
     }
 
-    // ── 영어 ──────────────────────────────────────────────────────────────────
-    if (enChunks) {
-      entry.enText = enChunks[i] ?? "";
-    } else if (enScenes.length > 0) {
-      const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), enScenes.length - 1) : 0;
-      entry.enText = enScenes[sIdx] ?? "";
+    // ── 베트남어 ──────────────────────────────────────────────────────────────────
+    if (viChunks) {
+      entry.viText = viChunks[i] ?? "";
+    } else if (viScenes.length > 0) {
+      const sIdx = segDur > 0 ? Math.min(Math.floor(t.startSec / segDur), viScenes.length - 1) : 0;
+      entry.viText = viScenes[sIdx] ?? "";
     }
     return entry;
   });
@@ -1582,7 +1646,7 @@ export async function syncAllSubtitlesForEpisode(episodeId: string): Promise<Sub
   writeProps({ ...(currentProps ?? { koreanText: "", hebrewText: "" }), subtitlesJson }, readDurationInFrames());
 
   console.log(
-    `[Subtitle] 전체 동기화 완료: KO=${koScenes.length}씬, HE=${heScenes.length}씬, EN=${enScenes.length}씬 ` +
+    `[Subtitle] 전체 동기화 완료: KO=${koScenes.length}씬, HE=${heScenes.length}씬, VI=${viScenes.length}씬 ` +
     `(기준 ${refCount}씬) → ${updated.length}개 항목`
   );
   return updated;
@@ -1750,20 +1814,20 @@ export async function generateNarrationForRemotionPublic(
     console.log(`[Remotion-TTS] verseNum 기반 히브리어 배분 완료 → SRT_HE 재배분 건너뜀`);
   }
 
-  // ── SRT_EN 있으면 씬 기반 영어 자막 자동 배분 (enText) ──────────────────────────
-  const srtEnForNarr = episode.contents.find((c) => c.contentType === "SRT_EN");
-  if (srtEnForNarr?.content) {
-    const enNarrScenes = extractSrtAllScenes(srtEnForNarr.content);
-    if (enNarrScenes.length > 0) {
-      const EN = enNarrScenes.length;
-      const enNarrSegDur = narrationDuration / EN;
+  // ── SRT_VI 있으면 씬 기반 베트남어 자막 자동 배분 (viText) ──────────────────────────
+  const srtViForNarr = episode.contents.find((c) => c.contentType === "SRT_VI");
+  if (srtViForNarr?.content) {
+    const viNarrScenes = extractSrtAllScenes(srtViForNarr.content);
+    if (viNarrScenes.length > 0) {
+      const VI = viNarrScenes.length;
+      const viNarrSegDur = narrationDuration / VI;
 
       finalTimings = finalTimings.map((t) => {
-        const sIdx = enNarrSegDur > 0 ? Math.min(Math.floor(t.startSec / enNarrSegDur), EN - 1) : 0;
-        return { ...t, enText: enNarrScenes[sIdx] ?? "" };
+        const sIdx = viNarrSegDur > 0 ? Math.min(Math.floor(t.startSec / viNarrSegDur), VI - 1) : 0;
+        return { ...t, viText: viNarrScenes[sIdx] ?? "" };
       }) as typeof timings;
 
-      console.log(`[Remotion-TTS] SRT_EN 씬 기반 영어 자막 자동 배분 완료 (${EN}씬)`);
+      console.log(`[Remotion-TTS] SRT_VI 씬 기반 베트남어 자막 자동 배분 완료 (${VI}씬)`);
     }
   }
 
@@ -1823,7 +1887,7 @@ export async function generateNarrationForRemotionPublic(
 
 // ─── 에피소드 영어 나레이션 생성 → Remotion public/ 에 저장 ──────────────────
 
-export async function generateEnglishNarrationForRemotionPublic(
+export async function generateVietnameseNarrationForRemotionPublic(
   episodeId: string,
   speakingRate?: number
 ): Promise<{ fileName: string; textLength: number; durationSec: number; durationInFrames: number; subtitlesJson?: string }> {
@@ -1835,31 +1899,31 @@ export async function generateEnglishNarrationForRemotionPublic(
 
   let narrationText = "";
 
-  // 우선순위: SRT_EN → SCRIPT Narration(EN) → titleKo (영어 없으면 에러)
-  const srtEn = episode.contents.find((c) => c.contentType === "SRT_EN");
-  if (srtEn?.content) {
-    narrationText = srtSingleText(srtEn.content);
-    if (narrationText) console.log(`[Remotion-TTS-EN] SRT_EN 사용 (${narrationText.length}자)`);
+  // 우선순위: SRT_VI → SCRIPT Narration(VI) → titleKo (베트남어 없으면 에러)
+  const srtVi = episode.contents.find((c) => c.contentType === "SRT_VI");
+  if (srtVi?.content) {
+    narrationText = srtSingleText(srtVi.content);
+    if (narrationText) console.log(`[Remotion-TTS-VI] SRT_VI 사용 (${narrationText.length}자)`);
   }
 
   if (!narrationText) {
     const scriptContent = episode.contents.find((c) => c.contentType === "SCRIPT");
     if (scriptContent?.content) {
-      narrationText = extractAllEnglishNarration(scriptContent.content);
-      if (narrationText) console.log(`[Remotion-TTS-EN] SCRIPT Narration(EN) 사용 (${narrationText.length}자)`);
+      narrationText = extractAllVietnameseNarration(scriptContent.content);
+      if (narrationText) console.log(`[Remotion-TTS-VI] SCRIPT Narration(VI) 사용 (${narrationText.length}자)`);
     }
   }
 
   if (!narrationText) {
-    throw new Error("영어 나레이션 텍스트가 없습니다. SRT_EN 또는 SCRIPT에 Narration(EN) 내용을 먼저 생성하세요.");
+    throw new Error("베트남어 나레이션 텍스트가 없습니다. SRT_VI 또는 SCRIPT에 Narration(VI) 내용을 먼저 생성하세요.");
   }
 
-  // Google TTS 영어 생성
-  const { filePath: storagePath, timings } = await generateNarration(episodeId, narrationText, "en", speakingRate);
+  // Google TTS 베트남어 생성
+  const { filePath: storagePath, timings } = await generateNarration(episodeId, narrationText, "vi", speakingRate);
 
   const destDir = path.join(PROJECT_PATH, "public");
   fs.mkdirSync(destDir, { recursive: true });
-  const fileName = "narrationEN.mp3";
+  const fileName = "narration_vi.mp3";
   const destPath = path.join(destDir, fileName);
   fs.copyFileSync(storagePath, destPath);
 
@@ -1942,8 +2006,8 @@ export async function generateEnglishNarrationForRemotionPublic(
   const currentProps = readProps();
   const updatedProps: RemotionProps = {
     ...(currentProps ?? { koreanText: "", hebrewText: "" }),
-    englishText: narrationText,
-    language: "en",
+    vietnameseText: narrationText,
+    language: "vi",
     audioFileName: fileName,
     subtitlesJson,
   };

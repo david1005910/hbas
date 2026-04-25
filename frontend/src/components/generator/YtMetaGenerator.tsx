@@ -41,7 +41,7 @@ export function YtMetaGenerator({ episodeId, existing, onDone }: Props) {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-parchment font-body font-semibold">유튜브 메타데이터</h3>
-          <p className="text-parchment/50 text-xs font-body mt-0.5">한국어·히브리어·영어 제목·설명·태그 (SEO 최적화)</p>
+          <p className="text-parchment/50 text-xs font-body mt-0.5">한국어·히브리어·베트남어 제목·설명·태그 (SEO 최적화)</p>
         </div>
         <div className="flex gap-2">
           {downloadContentId && <DownloadButton href={`/api/v1/contents/${downloadContentId}/download`} label="JSON 저장" />}
@@ -59,7 +59,7 @@ export function YtMetaGenerator({ episodeId, existing, onDone }: Props) {
 
       {parsed && (
         <div className="grid grid-cols-3 gap-3">
-          {(["ko", "he", "en"] as const).map((lang) => {
+          {(["ko", "he", "vi"] as const).map((lang) => {
             const meta = parsed[lang];
             if (!meta) return null;
             return (

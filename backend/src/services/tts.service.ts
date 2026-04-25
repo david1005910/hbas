@@ -16,10 +16,10 @@ const NARRATION_VOICE_KO = {
   ssmlGender: "MALE",
 };
 
-// 영어 나레이션 목소리 — Chirp3-HD (안정적이고 신뢰감 있는 남성 나레이터)
-const NARRATION_VOICE_EN = {
-  languageCode: "en-US",
-  name: "en-US-Chirp3-HD-Charon",
+// 베트남어 나레이션 목소리 — Standard-B (더 깊고 중후한 남성 나레이터)
+const NARRATION_VOICE_VI = {
+  languageCode: "vi-VN",
+  name: "vi-VN-Standard-B",
   ssmlGender: "MALE",
 };
 
@@ -32,7 +32,7 @@ const NARRATION_AUDIO_CONFIG = {
   volumeGainDb: 1.5,
 };
 
-const NARRATION_AUDIO_CONFIG_EN = {
+const NARRATION_AUDIO_CONFIG_VI = {
   audioEncoding: "MP3",
   speakingRate: 1.0,   // 1.0: 기본 속도
   volumeGainDb: 1.5,
@@ -133,8 +133,8 @@ function cleanNarrationText(text: string): string {
  * Google TTS API 단건 호출 → MP3 Buffer 반환
  * Chirp3-HD는 SSML 미지원 → plain text 사용
  */
-async function callTtsApi(text: string, token: string, lang: "ko" | "en" = "ko", speakingRate?: number): Promise<Buffer> {
-  const baseConfig = lang === "en" ? NARRATION_AUDIO_CONFIG_EN : NARRATION_AUDIO_CONFIG;
+async function callTtsApi(text: string, token: string, lang: "ko" | "vi" = "ko", speakingRate?: number): Promise<Buffer> {
+  const baseConfig = lang === "vi" ? NARRATION_AUDIO_CONFIG_VI : NARRATION_AUDIO_CONFIG;
   const audioConfig = speakingRate !== undefined
     ? { ...baseConfig, speakingRate }
     : baseConfig;
@@ -142,7 +142,7 @@ async function callTtsApi(text: string, token: string, lang: "ko" | "en" = "ko",
     TTS_ENDPOINT,
     {
       input: { text },
-      voice: lang === "en" ? NARRATION_VOICE_EN : NARRATION_VOICE_KO,
+      voice: lang === "vi" ? NARRATION_VOICE_VI : NARRATION_VOICE_KO,
       audioConfig,
     },
     { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
@@ -153,7 +153,7 @@ async function callTtsApi(text: string, token: string, lang: "ko" | "en" = "ko",
 export interface SubtitleTiming {
   text: string;       // 한국어 자막
   heText?: string;    // 히브리어 자막 (선택)
-  enText?: string;    // 영어 자막 (선택)
+  viText?: string;    // 베트남어 자막 (선택)
   startSec: number;
   endSec: number;
   verseNum?: number;  // 절 번호 (절 기반 배분 시 사용, 내부용)
@@ -168,14 +168,14 @@ export interface NarrationResult {
 export async function generateNarration(
   episodeId: string,
   inputText: string,
-  language: "ko" | "en" = "ko",
+  language: "ko" | "vi" = "ko",
   speakingRate?: number
 ): Promise<NarrationResult> {
   const token = await getGcpAccessToken();
 
   const isSrt = /^\d+\s*\n\d{2}:\d{2}:\d{2}/.test(inputText.trim());
   const base = isSrt ? extractSrtText(inputText) : inputText.trim();
-  // 한국어만 단어 치환 적용 (영어는 불필요)
+  // 한국어만 단어 치환 적용 (베트남어는 불필요)
   const extracted = cleanNarrationText(language === "ko" ? applyWordReplacements(base) : base);
 
   // 전체 텍스트를 cleanedText로 사용 (바이트 전역 제한 제거 — 긴 에피소드 전체 처리)

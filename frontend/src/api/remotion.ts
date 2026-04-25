@@ -9,7 +9,7 @@ export interface WordReplacement {
 export interface SubEntry {
   text: string;      // 한국어 자막
   heText?: string;   // 히브리어 자막
-  enText?: string;   // 영어 자막
+  viText?: string;   // 베트남어 자막
   startSec: number;
   endSec: number;
 }
@@ -17,14 +17,15 @@ export interface SubEntry {
 export interface RemotionProps {
   koreanText: string;
   hebrewText: string;
-  englishText?: string;
-  language?: "ko" | "en";
+  vietnameseText?: string;
+  language?: "ko" | "vi";
   videoFileName?: string;
   audioFileName?: string;
   episodeId?: string;
   subtitlesJson?: string;
   showSubtitle?: boolean;
   showNarration?: boolean;
+  fontSizeScale?: number;
 }
 
 export interface RenderStatus {
@@ -63,15 +64,15 @@ export const remotionApi = {
   sendKeyframe: (keyframeId: string) =>
     api.post<{ success: boolean; props: RemotionProps }>("/remotion/send-keyframe", { keyframeId }).then((r) => r.data),
 
-  // 에피소드 자막 텍스트 추출 (SCRIPT 나레이션KO / SRT_HE / SRT_EN)
+  // 에피소드 자막 텍스트 추출 (SCRIPT 나레이션KO / SRT_HE / SRT_VI)
   getEpisodeSubtitle: (episodeId: string) =>
-    api.get<{ koreanText: string; hebrewText: string; englishText: string }>(
+    api.get<{ koreanText: string; hebrewText: string; vietnameseText: string }>(
       `/remotion/episode-subtitle/${episodeId}`
     ).then((r) => r.data),
 
-  // 씬별 텍스트 추출 (SRT_KO / SRT_HE / SRT_EN의 N번째 씬)
+  // 씬별 텍스트 추출 (SRT_KO / SRT_HE / SRT_VI의 N번째 씬)
   getEpisodeSceneText: (episodeId: string, sceneNumber: number) =>
-    api.get<{ koreanText: string; hebrewText: string; englishText: string; videoFileName: string }>(
+    api.get<{ koreanText: string; hebrewText: string; vietnameseText: string; videoFileName: string }>(
       `/remotion/episode-scene/${episodeId}/${sceneNumber}`
     ).then((r) => r.data),
 
@@ -82,10 +83,10 @@ export const remotionApi = {
       "/remotion/generate-narration", { episodeId, speakingRate, narrationText }
     ).then((r) => r.data),
 
-  // 영어 나레이션 TTS 생성 → public/narration_en.mp3
-  generateEnglishNarration: (episodeId: string, speakingRate?: number) =>
+  // 베트남어 나레이션 TTS 생성 → public/narration_vi.mp3
+  generateVietnameseNarration: (episodeId: string, speakingRate?: number) =>
     api.post<{ success: boolean; fileName: string; textLength: number; durationSec?: number; durationInFrames?: number; subtitlesJson?: string }>(
-      "/remotion/generate-narration-en", { episodeId, speakingRate }
+      "/remotion/generate-narration-vi", { episodeId, speakingRate }
     ).then((r) => r.data),
 
   // 현재 자막 목록 조회
@@ -100,15 +101,15 @@ export const remotionApi = {
   autoFillHebrew: (episodeId: string) =>
     api.post<{ subtitles: SubEntry[] }>("/remotion/subtitles/auto-hebrew", { episodeId }).then((r) => r.data.subtitles),
 
-  // 기존 자막에 영어(SRT_EN) 자동 배분
-  autoFillEnglish: (episodeId: string) =>
-    api.post<{ subtitles: SubEntry[] }>("/remotion/subtitles/auto-english", { episodeId }).then((r) => r.data.subtitles),
+  // 기존 자막에 베트남어(SRT_VI) 자동 배분
+  autoFillVietnamese: (episodeId: string) =>
+    api.post<{ subtitles: SubEntry[] }>("/remotion/subtitles/auto-vietnamese", { episodeId }).then((r) => r.data.subtitles),
 
   // 기존 자막에 한국어(SRT_KO) 자동 배분
   autoFillKorean: (episodeId: string) =>
     api.post<{ subtitles: SubEntry[] }>("/remotion/subtitles/auto-korean", { episodeId }).then((r) => r.data.subtitles),
 
-  // HE+KO+EN 3종 동시 배분 (씬 경계 완전 일치 — 히브리어·한국어·영어 정렬 보장)
+  // HE+KO+VI 3종 동시 배분 (씬 경계 완전 일치 — 히브리어·한국어·베트남어 정렬 보장)
   syncAllSubtitles: (episodeId: string) =>
     api.post<{ subtitles: SubEntry[] }>("/remotion/subtitles/sync-all", { episodeId }).then((r) => r.data.subtitles),
 
@@ -164,7 +165,7 @@ export const remotionApi = {
     stability?: number;
     similarityBoost?: number;
     style?: number;
-    language?: "ko" | "en";
+    language?: "ko" | "vi";
   }) =>
     api.post<{ success: boolean; fileName: string; durationSec: number; durationInFrames: number; textLength: number }>(
       "/remotion/elevenlabs/generate", params

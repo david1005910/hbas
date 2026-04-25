@@ -98,7 +98,7 @@ enum ContentType {
   ANIM_PROMPT
   SRT_KO
   SRT_HE
-  SRT_EN
+  SRT_VI
   YT_META
 }
 

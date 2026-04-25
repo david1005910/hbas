@@ -12,14 +12,14 @@ import {
   getDownloadUrl,
   sendKeyframeToStudio,
   generateNarrationForRemotionPublic,
-  generateEnglishNarrationForRemotionPublic,
+  generateVietnameseNarrationForRemotionPublic,
   getEpisodeSubtitle,
   getEpisodeSceneText,
   distributeHebrewForEpisode,
-  distributeEnglishForEpisode,
+  distributeVietnameseForEpisode,
   distributeKoreanForEpisode,
   syncAllSubtitlesForEpisode,
-  extractAllEnglishNarration,
+  extractAllVietnameseNarration,
   applyBgmToRemotionPublic,
   updateBgmVolume,
   PROJECT_PATH,
@@ -94,16 +94,17 @@ router.get("/props", (_req: Request, res: Response) => {
 // POST /api/v1/remotion/props — data.json 업데이트
 router.post("/props", (req: Request, res: Response) => {
   try {
-    const { koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId,
-      showSubtitle, showNarration, subtitlesJson: bodySubtitlesJson } = req.body;
+    const { koreanText, hebrewText, vietnameseText, language, videoFileName, audioFileName, episodeId,
+      showSubtitle, showNarration, subtitlesJson: bodySubtitlesJson, fontSizeScale } = req.body;
     // 클라이언트가 subtitlesJson을 명시적으로 보내면 우선 사용 (씬 선택 시 씬별 자막 주입)
     // 그렇지 않으면 저장된 subtitles.json 파일에서 읽음
     const subtitlesJson = bodySubtitlesJson !== undefined ? bodySubtitlesJson : readCurrentSubtitlesJson();
     const currentDuration = readDurationInFrames();
     writeProps(
-      { koreanText, hebrewText, englishText, language, videoFileName, audioFileName, episodeId, subtitlesJson,
+      { koreanText, hebrewText, vietnameseText, language, videoFileName, audioFileName, episodeId, subtitlesJson,
         showSubtitle: showSubtitle !== false,
         showNarration: showNarration !== false,
+        fontSizeScale: fontSizeScale ?? 100,
       },
       currentDuration
     );
@@ -206,13 +207,13 @@ router.post("/generate-narration", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/v1/remotion/generate-narration-en — 영어 나레이션 TTS 생성 → public/narration_en.mp3
-router.post("/generate-narration-en", async (req: Request, res: Response) => {
+// POST /api/v1/remotion/generate-narration-vi — 베트남어 나레이션 TTS 생성 → public/narration_vi.mp3
+router.post("/generate-narration-vi", async (req: Request, res: Response) => {
   try {
     const { episodeId, speakingRate } = req.body;
     if (!episodeId) return res.status(400).json({ error: "episodeId 필수" });
     const rate = speakingRate !== undefined ? Number(speakingRate) : undefined;
-    const result = await generateEnglishNarrationForRemotionPublic(episodeId, rate);
+    const result = await generateVietnameseNarrationForRemotionPublic(episodeId, rate);
     res.json({ success: true, ...result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -339,12 +340,12 @@ router.post("/subtitles/auto-hebrew", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/v1/remotion/subtitles/auto-english — 기존 자막에 영어(SRT_EN) 자동 배분
-router.post("/subtitles/auto-english", async (req: Request, res: Response) => {
+// POST /api/v1/remotion/subtitles/auto-vietnamese — 기존 자막에 베트남어(SRT_VI) 자동 배분
+router.post("/subtitles/auto-vietnamese", async (req: Request, res: Response) => {
   try {
     const { episodeId } = req.body;
     if (!episodeId) return res.status(400).json({ error: "episodeId 필수" });
-    const subtitles = await distributeEnglishForEpisode(episodeId);
+    const subtitles = await distributeVietnameseForEpisode(episodeId);
     res.json({ subtitles });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -363,7 +364,7 @@ router.post("/subtitles/auto-korean", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/v1/remotion/subtitles/sync-all — HE+KO+EN 3종 동시 배분 (씬 경계 완전 일치)
+// POST /api/v1/remotion/subtitles/sync-all — HE+KO+VI 3종 동시 배분 (씬 경계 완전 일치)
 router.post("/subtitles/sync-all", async (req: Request, res: Response) => {
   try {
     const { episodeId } = req.body;
@@ -445,7 +446,7 @@ router.get("/elevenlabs/user", async (_req: Request, res: Response) => {
 router.post("/elevenlabs/generate", async (req: Request, res: Response) => {
   try {
     const { episodeId, voiceId, modelId, stability, similarityBoost, style, language } = req.body;
-    const lang: "ko" | "en" = language === "en" ? "en" : "ko";
+    const lang: "ko" | "vi" = language === "vi" ? "vi" : "ko";
     if (!episodeId) return res.status(400).json({ error: "episodeId 필수" });
     if (!voiceId)   return res.status(400).json({ error: "voiceId 필수" });
 
@@ -458,11 +459,11 @@ router.post("/elevenlabs/generate", async (req: Request, res: Response) => {
 
     let narrationText = "";
 
-    if (lang === "en") {
-      // 영어: SRT_EN → SCRIPT Narration(EN)
-      const srtEn = episode.contents.find((c) => c.contentType === "SRT_EN");
-      if (srtEn?.content) {
-        narrationText = srtEn.content
+    if (lang === "vi") {
+      // 베트남어: SRT_VI → SCRIPT Narration(VI)
+      const srtVi = episode.contents.find((c) => c.contentType === "SRT_VI");
+      if (srtVi?.content) {
+        narrationText = srtVi.content
           .replace(/^\uFEFF/, "")
           .split(/\n\s*\n/)
           .map((block) => {
@@ -474,7 +475,7 @@ router.post("/elevenlabs/generate", async (req: Request, res: Response) => {
       }
       if (!narrationText) {
         const script = episode.contents.find((c) => c.contentType === "SCRIPT");
-        if (script?.content) narrationText = extractAllEnglishNarration(script.content);
+        if (script?.content) narrationText = extractAllVietnameseNarration(script.content);
       }
     } else {
       // 한국어: SCRIPT Narration(KO) → SRT_KO
@@ -568,10 +569,10 @@ router.post("/chat", async (req: Request, res: Response) => {
       const subtitlesJson = readCurrentSubtitlesJson();
       writeProps(
         {
-          koreanText:    result.props.koreanText    ?? current?.koreanText    ?? "",
-          hebrewText:    result.props.hebrewText    ?? current?.hebrewText    ?? "",
-          englishText:   result.props.englishText   ?? current?.englishText   ?? "",
-          language:      (result.props.language as "ko" | "en") ?? current?.language ?? "ko",
+          koreanText:      result.props.koreanText      ?? current?.koreanText      ?? "",
+          hebrewText:      result.props.hebrewText      ?? current?.hebrewText      ?? "",
+          vietnameseText:  result.props.vietnameseText  ?? current?.vietnameseText  ?? "",
+          language:        (result.props.language as "ko" | "vi") ?? current?.language ?? "ko",
           videoFileName: result.props.videoFileName ?? current?.videoFileName ?? "",
           audioFileName: result.props.audioFileName ?? current?.audioFileName ?? "narration.mp3",
           episodeId:     current?.episodeId,

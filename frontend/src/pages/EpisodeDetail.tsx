@@ -50,7 +50,7 @@ export function EpisodeDetail() {
     episode.contents?.find((c) => c.contentType === type);
 
   const getSrtContents = () =>
-    episode.contents?.filter((c) => ["SRT_KO", "SRT_HE", "SRT_EN"].includes(c.contentType)) ?? [];
+    episode.contents?.filter((c) => ["SRT_KO", "SRT_HE", "SRT_VI"].includes(c.contentType)) ?? [];
 
   return (
     <PageWrapper

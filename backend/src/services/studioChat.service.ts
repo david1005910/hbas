@@ -11,8 +11,8 @@ You can respond in two modes:
      "props": {
        "koreanText": "...",        // optional
        "hebrewText": "...",        // optional
-       "englishText": "...",       // optional
-       "language": "ko" | "en",   // optional
+       "vietnameseText": "...",       // optional
+       "language": "ko" | "vi",   // optional
        "videoFileName": "...",     // optional
        "audioFileName": "..."      // optional
      },
@@ -38,7 +38,7 @@ export interface ChatMessage {
 export interface StudioChatContext {
   koreanText: string;
   hebrewText: string;
-  englishText?: string;
+  vietnameseText?: string;
   language?: string;
   videoFileName?: string;
   audioFileName?: string;

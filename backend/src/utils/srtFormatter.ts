@@ -23,7 +23,14 @@ export function buildSrtContent(entries: SrtEntry[], isHebrew = false): string {
   return entries
     .map((e) => {
       // 빈 히브리어 텍스트는 wrapHebrew 처리 안 함 (빈 문자열에 wrapHebrew 적용 시 \u202B\u202C만 남아 잘못된 heText 생성됨)
-      const text = isHebrew ? (e.text ? wrapHebrew(e.text) : "") : e.text;
+      let text = e.text;
+      
+      // 히브리어 텍스트는 한 줄로 표시하기 위해 줄바꿈을 공백으로 치환
+      if (isHebrew && text) {
+        text = text.replace(/[\r\n]+/g, ' ').trim();
+        text = wrapHebrew(text);
+      }
+      
       return `${e.index}\n${secondsToSrtTime(e.startSec)} --> ${secondsToSrtTime(e.endSec)}\n${text}\n`;
     })
     .join("\n");

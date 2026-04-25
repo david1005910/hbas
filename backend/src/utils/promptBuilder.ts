@@ -18,8 +18,9 @@ export function buildScriptPrompt(ep: EpisodeCtx): string {
   히브리어 원문의 어휘·어순·뉘앙스를 살려 AI가 직접 창작한 자연스러운 현대 한국어로 작성하세요.
 - 히브리어 나레이션: 해당 절의 핵심 내용을 현대 히브리어로 자유롭게 풀어 쓰세요.
   기존 마소라 텍스트를 그대로 복사·인용하지 말고, AI가 해당 내용을 히브리어로 재표현하세요.
-- 영어 나레이션(EN): KJV·NIV·ESV·NASB 등 기존 영어 성경 표현을 그대로 사용하지 마세요.
-  히브리어 원문 의미를 AI가 직접 번역한 자연스러운 현대 영어로 작성하세요.
+- 베트남어 나레이션(VI): 기존 베트남어 성경 표현을 그대로 사용하지 마세요.
+  히브리어 원문 의미를 AI가 직접 번역한 자연스럽고 시적인 현대 베트남어로 작성하세요.
+  하나님을 지칭할 때는 반드시 "엘로힘(Elohim)"을 사용하세요.
 - 모든 항목은 AI가 독자적으로 창작한 표현이어야 합니다.
 
 다음 형식으로 에피소드 대본을 생성해주세요:
@@ -27,6 +28,7 @@ export function buildScriptPrompt(ep: EpisodeCtx): string {
 【에피소드 제목】
 - 한국어:
 - 히브리어:
+- 베트남어:
 
 【등장인물】
 
@@ -35,7 +37,7 @@ export function buildScriptPrompt(ep: EpisodeCtx): string {
   장면설명(KO):
   나레이션(KO):
   나레이션(HE):
-  나레이션(EN):
+  나레이션(VI):
   감정톤:
 
 (씬 ${ep.sceneCount}까지 반복)
@@ -110,6 +112,8 @@ const STYLE_MAP: Record<string, string> = {
     "photorealistic 3D render, cinematic VFX quality, IMAX wide shot, dramatic directional lighting, ancient Levant setting, golden hour atmosphere",
   "Pixar 3D Animation":
     "Pixar-style 3D animation, vibrant expressive character design, warm inviting color palette, subsurface scattering skin shader, soft global illumination, family-friendly cinematic composition, high detail Studio Pixar quality render",
+  "Disney Animation":
+    "Classic Disney 3D animation style, enchanting fairy-tale aesthetic, expressive character animation, magical sparkles and glows, rich saturated colors, whimsical fantasy atmosphere, Disney Renaissance era quality, smooth fluid motion, musical theatrical composition",
   "Hand-painted Watercolor 3D":
     "3D animation with watercolor texture overlay, soft translucent brush strokes, warm earth tones, impressionistic biblical illustration style",
   "Ancient Fresco Style":

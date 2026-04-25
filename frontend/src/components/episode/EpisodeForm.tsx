@@ -6,6 +6,7 @@ import type { AnimStyle } from "../../types";
 const ANIM_STYLES: AnimStyle[] = [
   "Epic 3D Cinematic",
   "Pixar 3D Animation",
+  "Disney Animation",
   "Hand-painted Watercolor 3D",
   "Ancient Fresco Style",
   "Dark Fantasy 3D",
@@ -94,7 +95,7 @@ export function EpisodeForm({ projectId, onSubmit, isLoading }: Props) {
           <label className="block text-parchment/70 text-sm mb-1 font-body">씬 수</label>
           <input
             type="number"
-            min={3} max={12}
+            min={3} max={100}
             value={form.sceneCount}
             onChange={(e) => set("sceneCount", Number(e.target.value))}
             className="w-full bg-ink border border-gold/30 text-parchment rounded-lg px-3 py-2 text-sm font-body"

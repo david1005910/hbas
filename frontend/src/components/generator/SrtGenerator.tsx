@@ -28,7 +28,8 @@ function parseSrt(srtContent: string): Array<{ num: number; time: string; text: 
       const num = parseInt(lines[0], 10);
       if (isNaN(num)) return null;
       const time = lines[1] || "";
-      const text = lines.slice(2).join(" ").trim();
+      // 여러 줄 자막 보존 (한국어 히브리어 어휘 정보 등)
+      const text = lines.slice(2).join("\n").trim();
       return text ? { num, time, text } : null;
     })
     .filter((b): b is { num: number; time: string; text: string } => b !== null);
@@ -65,7 +66,7 @@ function recommendScenes(verseCount: number, currentScene: number): number {
   return Math.max(10, Math.ceil(verseCount * 0.35));
 }
 
-type ViewTab = "table" | "ko" | "he" | "en";
+type ViewTab = "table" | "ko" | "he" | "vi";
 
 export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCount = 5, verseRange, onDone }: Props) {
   const [isLoading, setIsLoading] = useState(false);
@@ -80,7 +81,7 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
   const [editMode, setEditMode] = useState(false);
   const [editedKo, setEditedKo] = useState<string[]>([]);
   const [editedHe, setEditedHe] = useState<string[]>([]);
-  const [editedEn, setEditedEn] = useState<string[]>([]);
+  const [editedVi, setEditedVi] = useState<string[]>([]);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState("");
   // 저장 후 Remotion 동기화
@@ -99,18 +100,18 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
 
   const srtKo = existing.find((c) => c.contentType === "SRT_KO");
   const srtHe = existing.find((c) => c.contentType === "SRT_HE");
-  const srtEn = existing.find((c) => c.contentType === "SRT_EN");
+  const srtVi = existing.find((c) => c.contentType === "SRT_VI");
 
   const koScenes = srtKo ? parseSrt(srtKo.content) : [];
   const heScenes = srtHe ? parseSrt(srtHe.content) : [];
-  const enScenes = srtEn ? parseSrt(srtEn.content) : [];
-  const maxScenes = Math.max(koScenes.length, heScenes.length, enScenes.length);
+  const viScenes = srtVi ? parseSrt(srtVi.content) : [];
+  const maxScenes = Math.max(koScenes.length, heScenes.length, viScenes.length);
 
   // 편집 모드 진입 시 현재 파싱된 텍스트로 초기화
   function enterEditMode() {
     setEditedKo(koScenes.map((s) => s.text));
     setEditedHe(heScenes.map((s) => s.text));
-    setEditedEn(enScenes.map((s) => s.text));
+    setEditedVi(viScenes.map((s) => s.text));
     setSaveStatus("idle");
     setSaveError("");
     setSyncStatus("idle");
@@ -149,9 +150,9 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
         const rebuilt = rebuildSrt(heScenes, editedHe);
         saves.push(api.patch(`/contents/${srtHe.id}`, { content: rebuilt }).then(() => {}));
       }
-      if (srtEn && editedEn.length > 0) {
-        const rebuilt = rebuildSrt(enScenes, editedEn);
-        saves.push(api.patch(`/contents/${srtEn.id}`, { content: rebuilt }).then(() => {}));
+      if (srtVi && editedVi.length > 0) {
+        const rebuilt = rebuildSrt(viScenes, editedVi);
+        saves.push(api.patch(`/contents/${srtVi.id}`, { content: rebuilt }).then(() => {}));
       }
 
       await Promise.all(saves);
@@ -244,7 +245,7 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h3 className="text-parchment font-body font-semibold">SRT 자막 3종</h3>
-          <p className="text-parchment/50 text-xs font-body mt-0.5">한국어 · 히브리어 (RTL) · 영어 — 씬별 정렬 확인 · 직접 편집 가능</p>
+          <p className="text-parchment/50 text-xs font-body mt-0.5">한국어 · 히브리어 (RTL) · 베트남어 — 씬별 정렬 확인 · 직접 편집 가능</p>
         </div>
 
         {/* 씬 수 선택 + 추천 */}
@@ -301,11 +302,11 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
       {error && <p className="text-red-400 text-sm font-body">{error}</p>}
 
       {/* 다운로드 버튼 */}
-      {done && (srtKo || srtHe || srtEn) && (
+      {done && (srtKo || srtHe || srtVi) && (
         <div className="flex flex-wrap gap-2">
           {srtKo && <DownloadButton href={`/api/v1/contents/${srtKo.id}/download`} label="KO .srt" />}
           {srtHe && <DownloadButton href={`/api/v1/contents/${srtHe.id}/download`} label="HE .srt" />}
-          {srtEn && <DownloadButton href={`/api/v1/contents/${srtEn.id}/download`} label="EN .srt" />}
+          {srtVi && <DownloadButton href={`/api/v1/contents/${srtVi.id}/download`} label="VI .srt" />}
         </div>
       )}
 
@@ -319,7 +320,7 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
                 { key: "table" as ViewTab, label: "씬 정렬 비교" },
                 { key: "ko" as ViewTab, label: "🇰🇷 한국어" },
                 { key: "he" as ViewTab, label: "🔤 히브리어" },
-                { key: "en" as ViewTab, label: "🇺🇸 영어" },
+                { key: "vi" as ViewTab, label: "🇻🇳 베트남어" },
               ] as const).map(({ key, label }) => (
                 <button
                   key={key}
@@ -422,14 +423,14 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
                     <th className="px-3 py-2 text-left text-parchment/50 w-10">씬</th>
                     <th className="px-3 py-2 text-left text-parchment/60">🇰🇷 한국어</th>
                     <th className="px-3 py-2 text-right text-amber-300/60" dir="rtl">🔤 히브리어</th>
-                    <th className="px-3 py-2 text-left text-blue-300/60">🇺🇸 영어</th>
+                    <th className="px-3 py-2 text-left text-blue-300/60">🇻🇳 베트남어</th>
                   </tr>
                 </thead>
                 <tbody>
                   {Array.from({ length: maxScenes }, (_, i) => {
                     const ko = koScenes[i];
                     const he = heScenes[i];
-                    const en = enScenes[i];
+                    const vi = viScenes[i];
                     return (
                       <tr
                         key={i}
@@ -443,13 +444,21 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
                         <td className="px-3 py-2 text-parchment/80 max-w-[220px] align-top">
                           {editMode && ko ? (
                             <textarea
-                              rows={4}
+                              rows={5}
                               className="w-full bg-ink border border-gold/30 focus:border-gold/60 rounded-lg px-2 py-1.5 text-parchment/90 text-xs resize-none focus:outline-none leading-relaxed"
                               value={editedKo[i] ?? ko.text}
                               onChange={(e) => { const next = [...editedKo]; next[i] = e.target.value; setEditedKo(next); }}
                             />
                           ) : (
-                            ko?.text || <span className="text-red-400/60 italic">없음</span>
+                            ko ? (
+                              <div className="space-y-1">
+                                {ko.text.split('\n').map((line, idx) => (
+                                  <div key={idx} className={line.startsWith('[') ? 'text-xs text-amber-300/70 italic' : 'text-xs'}>
+                                    {line}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : <span className="text-red-400/60 italic text-xs">없음</span>
                           )}
                         </td>
 
@@ -468,17 +477,17 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
                           )}
                         </td>
 
-                        {/* 영어 셀 */}
+                        {/* 베트남어 셀 */}
                         <td className="px-3 py-2 text-blue-200/70 max-w-[220px] align-top">
-                          {editMode && en ? (
+                          {editMode && vi ? (
                             <textarea
                               rows={4}
                               className="w-full bg-ink border border-blue-400/30 focus:border-blue-400/60 rounded-lg px-2 py-1.5 text-blue-200/80 text-xs resize-none focus:outline-none leading-relaxed"
-                              value={editedEn[i] ?? en.text}
-                              onChange={(e) => { const next = [...editedEn]; next[i] = e.target.value; setEditedEn(next); }}
+                              value={editedVi[i] ?? vi.text}
+                              onChange={(e) => { const next = [...editedVi]; next[i] = e.target.value; setEditedVi(next); }}
                             />
                           ) : (
-                            en?.text || <span className="text-parchment/30 italic">없음</span>
+                            vi?.text || <span className="text-parchment/30 italic">없음</span>
                           )}
                         </td>
                       </tr>
@@ -491,13 +500,13 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
 
           {/* 단일 언어 SRT 전체 보기 */}
           {viewTab !== "table" && (() => {
-            const isSrtTab = (tab: ViewTab): tab is "ko" | "he" | "en" => tab !== "table";
+            const isSrtTab = (tab: ViewTab): tab is "ko" | "he" | "vi" => tab !== "table";
             if (!isSrtTab(viewTab)) return null;
 
-            const content = viewTab === "ko" ? srtKo : viewTab === "he" ? srtHe : srtEn;
-            const scenes = viewTab === "ko" ? koScenes : viewTab === "he" ? heScenes : enScenes;
-            const editedTexts = viewTab === "ko" ? editedKo : viewTab === "he" ? editedHe : editedEn;
-            const setEditedTexts = viewTab === "ko" ? setEditedKo : viewTab === "he" ? setEditedHe : setEditedEn;
+            const content = viewTab === "ko" ? srtKo : viewTab === "he" ? srtHe : srtVi;
+            const scenes = viewTab === "ko" ? koScenes : viewTab === "he" ? heScenes : viScenes;
+            const editedTexts = viewTab === "ko" ? editedKo : viewTab === "he" ? editedHe : editedVi;
+            const setEditedTexts = viewTab === "ko" ? setEditedKo : viewTab === "he" ? setEditedHe : setEditedVi;
             const isRtl = viewTab === "he";
             return (
               <div className="p-3 space-y-1 max-h-[600px] overflow-y-auto">
@@ -517,7 +526,7 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
                     <div className="flex-1 min-w-0">
                       {editMode ? (
                         <textarea
-                          rows={2}
+                          rows={viewTab === "ko" ? 3 : 2}
                           dir={isRtl ? "rtl" : "ltr"}
                           className={`w-full bg-ink border ${isRtl ? "border-amber-400/30 focus:border-amber-400/60 text-amber-200/90 font-mono" : "border-gold/30 focus:border-gold/60 text-parchment/90"} rounded-lg px-2 py-1.5 text-sm resize-none focus:outline-none leading-relaxed`}
                           value={editedTexts[i] ?? scene.text}
@@ -528,9 +537,26 @@ export function SrtGenerator({ episodeId, existing, sceneCount: initialSceneCoun
                           }}
                         />
                       ) : (
-                        <p className={`text-sm ${isRtl ? "text-amber-200/90" : "text-parchment/85"} break-words`}>
-                          {scene.text}
-                        </p>
+                        <div>
+                          {viewTab === "ko" ? (
+                            // Korean subtitles with smaller font
+                            scene.text.includes('\n') ? (
+                              scene.text.split('\n').map((line, idx) => (
+                                <p key={idx} className={`break-words ${line.startsWith('[') ? 'text-amber-300/70 italic text-xs mt-1' : 'text-xs text-parchment/85'}`}>
+                                  {line}
+                                </p>
+                              ))
+                            ) : (
+                              <p className="text-xs text-parchment/85 break-words">
+                                {scene.text}
+                              </p>
+                            )
+                          ) : (
+                            <p className={`text-sm ${isRtl ? "text-amber-200/90" : "text-parchment/85"} break-words`}>
+                              {scene.text}
+                            </p>
+                          )}
+                        </div>
                       )}
                       <p className="text-parchment/25 text-xs font-mono mt-0.5">{scene.time}</p>
                     </div>

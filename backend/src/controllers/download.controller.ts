@@ -28,7 +28,7 @@ export async function downloadContent(req: Request, res: Response, next: NextFun
 
     const extMap: Record<string, string> = {
       SCRIPT: "txt", ANIM_PROMPT: "txt",
-      SRT_KO: "srt", SRT_HE: "srt", SRT_EN: "srt",
+      SRT_KO: "srt", SRT_HE: "srt", SRT_VI: "srt",
       YT_META: "json",
     };
     const ext = extMap[content.contentType] || "txt";
@@ -68,7 +68,7 @@ export async function downloadAll(req: Request, res: Response, next: NextFunctio
     for (const content of latestContents.values()) {
       const extMap: Record<string, string> = {
         SCRIPT: "txt", ANIM_PROMPT: "txt",
-        SRT_KO: "srt", SRT_HE: "srt", SRT_EN: "srt",
+        SRT_KO: "srt", SRT_HE: "srt", SRT_VI: "srt",
         YT_META: "json",
       };
       const ext = extMap[content.contentType] || "txt";

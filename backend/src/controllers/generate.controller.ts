@@ -212,10 +212,10 @@ export async function generateSrt(req: Request, res: Response, next: NextFunctio
 
     // SCRIPT 나레이션(KO)/(EN) 직접 추출 → Gemini 재호출 없이 SRT 생성 (품질·속도 향상)
     const scriptKoScenes = extractNarrationScenesByLang(latestScript.content, "KO");
-    const scriptEnScenes = extractNarrationScenesByLang(latestScript.content, "EN");
+    const scriptViScenes = extractNarrationScenesByLang(latestScript.content, "VI");
 
     let koSrtFromScript: string | null = null;
-    let enSrtFromScript: string | null = null;
+    let viSrtFromScript: string | null = null;
 
     if (scriptKoScenes.length === sceneCount) {
       const koEntries = scriptKoScenes.map((text, i) => ({
@@ -228,20 +228,20 @@ export async function generateSrt(req: Request, res: Response, next: NextFunctio
       console.log(`[SRT] SCRIPT 나레이션(KO) ${scriptKoScenes.length}씬 → SRT_KO 직접 생성`);
     }
 
-    if (scriptEnScenes.length === sceneCount) {
-      const enEntries = scriptEnScenes.map((text, i) => ({
+    if (scriptViScenes.length === sceneCount) {
+      const viEntries = scriptViScenes.map((text, i) => ({
         index: i + 1,
         startSec: timings[i]?.startSec ?? i * 10,
         endSec: timings[i]?.endSec ?? (i + 1) * 10,
         text,
       }));
-      enSrtFromScript = buildSrtContent(enEntries);
-      console.log(`[SRT] SCRIPT 나레이션(EN) ${scriptEnScenes.length}씬 → SRT_EN 직접 생성`);
+      viSrtFromScript = buildSrtContent(viEntries);
+      console.log(`[SRT] SCRIPT 나레이션(VI) ${scriptViScenes.length}씬 → SRT_VI 직접 생성`);
     }
 
     // Gemini SRT 생성: SCRIPT 나레이션이 누락된 언어만 보완
     let pack: { ko: string; he: string; en: string } | null = null;
-    if (!koSrtFromScript || !enSrtFromScript) {
+    if (!koSrtFromScript || !viSrtFromScript) {
       console.log("[SRT] SCRIPT 나레이션 불완전 → Gemini generateSrtPack 호출");
       pack = await generateSrtPack(
         episode,
@@ -269,19 +269,19 @@ export async function generateSrt(req: Request, res: Response, next: NextFunctio
     }
 
     const finalKoSrt = koSrtFromScript ?? "";
-    const finalEnSrt = enSrtFromScript ?? pack?.en ?? "";
+    const finalViSrt = viSrtFromScript ?? pack?.vi ?? "";
     // SRT_HE: DB에서 직접 생성된 경우 Gemini 결과 대신 사용
     const srtHe = dbHebrewSrt ?? pack?.he ?? "";
 
     // 기존 SRT 레코드 삭제 후 새로 생성 (중복 누적 방지, 오염된 이전 데이터 교체)
     await prisma.generatedContent.deleteMany({
-      where: { episodeId: episode.id, contentType: { in: ["SRT_KO", "SRT_HE", "SRT_EN"] } },
+      where: { episodeId: episode.id, contentType: { in: ["SRT_KO", "SRT_HE", "SRT_VI"] } },
     });
     await prisma.generatedContent.createMany({
       data: [
         { episodeId: episode.id, contentType: "SRT_KO", content: finalKoSrt, aiModel: process.env.GEMINI_MODEL },
         { episodeId: episode.id, contentType: "SRT_HE", content: srtHe, aiModel: "BibleVerse-DB" },
-        { episodeId: episode.id, contentType: "SRT_EN", content: finalEnSrt, aiModel: process.env.GEMINI_MODEL },
+        { episodeId: episode.id, contentType: "SRT_VI", content: finalViSrt, aiModel: process.env.GEMINI_MODEL },
       ],
     });
 
@@ -298,10 +298,10 @@ export async function generateSrt(req: Request, res: Response, next: NextFunctio
 
     const heSource = dbHebrewSrt ? "BibleVerse DB 원문" : "SCRIPT";
     const koSource = koSrtFromScript && !pack ? "SCRIPT 나레이션" : "Gemini";
-    const enSource = enSrtFromScript && !pack ? "SCRIPT 나레이션" : "Gemini";
+    const viSource = viSrtFromScript && !pack ? "SCRIPT 나레이션" : "Gemini";
     res.json({
-      message: `SRT 3종 생성 완료 — KO: ${koSource} | EN: ${enSource} | HE: ${heSource}`,
-      types: ["SRT_KO", "SRT_HE", "SRT_EN"],
+      message: `SRT 3종 생성 완료 — KO: ${koSource} | VI: ${viSource} | HE: ${heSource}`,
+      types: ["SRT_KO", "SRT_HE", "SRT_VI"],
     });
   } catch (err) { next(err); }
 }
@@ -315,7 +315,7 @@ export async function generateYtMeta(req: Request, res: Response, next: NextFunc
       episode.titleKo,
       episode.bibleBook.nameKo,
       episode.bibleBook.nameHe,
-      episode.bibleBook.nameEn,
+      "Sáng Thế Ký", // Vietnamese book name placeholder
       episode.verseRange
     );
 

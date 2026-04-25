@@ -20,6 +20,7 @@ export type EpisodeStatus = "DRAFT" | "IN_PROGRESS" | "COMPLETE";
 export type AnimStyle =
   | "Epic 3D Cinematic"
   | "Pixar 3D Animation"
+  | "Disney Animation"
   | "Hand-painted Watercolor 3D"
   | "Ancient Fresco Style"
   | "Dark Fantasy 3D"
@@ -44,7 +45,7 @@ export interface Episode {
   videoClips?: SceneVideoClip[];
 }
 
-export type ContentType = "SCRIPT" | "ANIM_PROMPT" | "SRT_KO" | "SRT_HE" | "SRT_EN" | "YT_META";
+export type ContentType = "SCRIPT" | "ANIM_PROMPT" | "SRT_KO" | "SRT_HE" | "SRT_VI" | "YT_META";
 
 export interface GeneratedContent {
   id: string;
