@@ -1,7 +1,7 @@
 import { generateOnce } from "./gemini.service";
 import { buildSrtContent, distributeTiming } from "../utils/srtFormatter";
 import { addUtf8Bom } from "../utils/hebrewUtils";
-import { applyWordReplacements } from "./wordReplacement.service";
+import { applyWordReplacements, applyVietnameseReplacements } from "./wordReplacement.service";
 
 interface EpisodeCtx {
   sceneCount: number;
@@ -61,7 +61,7 @@ ${sceneInstruction}
 - 글자 수 제한 없이 각 씬에 해당하는 내용 전체를 완전한 베트남어 문장으로 번역하세요.
 - 모든 씬마다 서로 다른 고유한 문장을 작성하세요 (동일 단어·구문 반복 금지).
 - 기존 베트남어 성경을 그대로 인용하지 마세요.
-- 하나님을 지칭할 때는 반드시 "엘로힘(Elohim)"을 사용하세요 (Đức Chúa Trời 대신).
+- 하나님을 지칭할 때는 반드시 "Elohim"을 사용하세요 (Đức Chúa Trời 대신).
 
 [히브리어 자막]
 - 위에 제공된 히브리어 원문을 씬별로 분배하여 그대로 사용하세요 (니쿠드 포함).
@@ -74,7 +74,7 @@ ${sceneInstruction}
     "땅은 형태가 없고 비어있었으며\\n[토후(혼돈) · 보후(공허) · 호셰크(어둠)]"
   ],
   "he": ["בְּרֵאשִׁית בָּרָא אֱלֹהִים", "וְהָאָרֶץ הָיְתָה תֹהוּ וָבֹהוּ"],
-  "vi": ["Ban đầu 엘로힘(Elohim) sáng tạo", "Và trái đất không có hình dạng và trống rỗng"]
+  "vi": ["Ban đầu Elohim sáng tạo", "Và trái đất không có hình dạng và trống rỗng"]
 }
 
 ⚠️ 한국어(ko) 배열의 각 요소는 반드시 \\n을 포함해야 합니다!
@@ -129,7 +129,7 @@ ${sceneInstruction}
     );
 
   const koLines = parsed.ko.slice(0, ep.sceneCount).map((t) => applyWordReplacements(t));
-  const viLines = (parsed.vi ?? []).slice(0, ep.sceneCount);
+  const viLines = (parsed.vi ?? []).slice(0, ep.sceneCount).map((t) => applyVietnameseReplacements(t));
   // 히브리어 텍스트는 한 줄로 처리 (줄바꿈 제거)
   const heLines = parsed.he.slice(0, ep.sceneCount).map((t) => t ? t.replace(/[\r\n]+/g, ' ').trim() : t);
 

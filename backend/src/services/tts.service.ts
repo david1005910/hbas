@@ -4,7 +4,7 @@ import * as path from "path";
 import * as os from "os";
 import { getGcpAccessToken } from "../config/vertexai";
 import { generateSilenceMp3, concatAudioFiles, getMediaDuration } from "./ffmpeg.service";
-import { applyWordReplacements } from "./wordReplacement.service";
+import { applyWordReplacements, applyVietnameseReplacements } from "./wordReplacement.service";
 
 const TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const AUDIO_BASE = process.env.AUDIO_STORAGE_PATH || "/app/storage/audio";
@@ -175,8 +175,14 @@ export async function generateNarration(
 
   const isSrt = /^\d+\s*\n\d{2}:\d{2}:\d{2}/.test(inputText.trim());
   const base = isSrt ? extractSrtText(inputText) : inputText.trim();
-  // 한국어만 단어 치환 적용 (베트남어는 불필요)
-  const extracted = cleanNarrationText(language === "ko" ? applyWordReplacements(base) : base);
+  // 언어별 단어 치환 적용
+  let processedText = base;
+  if (language === "ko") {
+    processedText = applyWordReplacements(base);
+  } else if (language === "vi") {
+    processedText = applyVietnameseReplacements(base);
+  }
+  const extracted = cleanNarrationText(processedText);
 
   // 전체 텍스트를 cleanedText로 사용 (바이트 전역 제한 제거 — 긴 에피소드 전체 처리)
   const cleanedText = extracted;

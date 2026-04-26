@@ -58,3 +58,12 @@ export function applyWordReplacements(text: string): string {
   }
   return result;
 }
+
+/**
+ * 베트남어 텍스트에 특화된 치환 규칙 적용
+ * "엘로힘(Elohim)" → "Elohim"
+ */
+export function applyVietnameseReplacements(text: string): string {
+  if (!text) return text;
+  return text.replace(/엘로힘\(Elohim\)/g, "Elohim");
+}
