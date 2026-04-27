@@ -61,12 +61,32 @@ export function VideoStudio() {
   const [showNarration, setShowNarration] = useState(true);
   // 자막 폰트 크기 조절
   const [fontSizeScale, setFontSizeScale] = useState(100); // 50-150% scale
+  // 자막 글자수 제한
+  const [subtitleCharLimit, setSubtitleCharLimit] = useState(45);
+  const [hebrewCharLimit, setHebrewCharLimit] = useState(40);
   // Gemini 채팅
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  
+  // Helper function to build RemotionProps with all current settings
+  const buildRemotionProps = (overrides?: Partial<RemotionProps>): RemotionProps => ({
+    koreanText,
+    hebrewText,
+    vietnameseText,
+    language,
+    videoFileName,
+    audioFileName,
+    episodeId: selectedEpisodeId || undefined,
+    showSubtitle,
+    showNarration,
+    fontSizeScale,
+    subtitleCharLimit,
+    hebrewCharLimit,
+    ...overrides
+  });
   // BGM 업로드
   const [bgmInfo, setBgmInfo] = useState<BgmInfo | null>(null);
   const [bgmUploading, setBgmUploading] = useState(false);
@@ -172,12 +192,9 @@ export function VideoStudio() {
       setNarrationStatus("done");
       refetchAudios();
       // Remotion Studio 반영 (오디오 파일 + 자막 갱신)
-      sendMutation.mutate({
-        koreanText, hebrewText, vietnameseText, language,
-        videoFileName, audioFileName: result.fileName ?? "narration.mp3",
-        episodeId: selectedEpisodeId || undefined,
-        showSubtitle, showNarration,
-      });
+      sendMutation.mutate(buildRemotionProps({
+        audioFileName: result.fileName ?? "narration.mp3"
+      }));
       setTimeout(() => setIframeSrc(`${REMOTION_STUDIO_URL}?t=${Date.now()}`), 500);
     } catch (err: any) {
       setNarrationError(err?.response?.data?.error ?? err.message);
@@ -402,15 +419,9 @@ export function VideoStudio() {
       setVideoFileName(result.fileName);
       refetchVideos();
       // 업로드 완료 즉시 Remotion Studio 배경 교체
-      sendMutation.mutate({
-        koreanText,
-        hebrewText,
-        videoFileName: result.fileName,
-        audioFileName,
-        episodeId: selectedEpisodeId || undefined,
-        showSubtitle,
-        showNarration,
-      });
+      sendMutation.mutate(buildRemotionProps({
+        videoFileName: result.fileName
+      }));
     } catch (err: any) {
       setUploadError(err?.response?.data?.error ?? err.message);
     } finally {
@@ -1033,7 +1044,7 @@ export function VideoStudio() {
                 onClick={() => {
                   const next = !showNarration;
                   setShowNarration(next);
-                  sendMutation.mutate({ koreanText, hebrewText, vietnameseText, language, videoFileName, audioFileName, episodeId: selectedEpisodeId || undefined, showSubtitle, showNarration: next, fontSizeScale });
+                  sendMutation.mutate(buildRemotionProps({ showNarration: next }));
                 }}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs border transition-all ${showNarration ? "border-emerald-400/50 text-emerald-300" : "border-white/20 text-white/40"}`}
                 style={{ background: showNarration ? "rgba(0,180,80,0.18)" : "rgba(255,255,255,0.06)" }}
@@ -1045,6 +1056,7 @@ export function VideoStudio() {
             
             {/* 자막 크기 조절 */}
             {showSubtitle && (
+              <>
               <div className="mt-3 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-white/60">자막 크기</span>
@@ -1098,6 +1110,95 @@ export function VideoStudio() {
                   </button>
                 </div>
               </div>
+              
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-white/60">한국어/베트남어 자막 글자수</span>
+                  <span className="text-amber-300">{subtitleCharLimit}자</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const newLimit = Math.max(20, subtitleCharLimit - 5);
+                      setSubtitleCharLimit(newLimit);
+                      sendMutation.mutate(buildRemotionProps({ subtitleCharLimit: newLimit }));
+                    }}
+                    className="px-2 py-1 text-xs border border-white/20 rounded-lg hover:bg-white/10"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="range"
+                    min="20"
+                    max="80"
+                    value={subtitleCharLimit}
+                    onChange={(e) => {
+                      const newLimit = Number(e.target.value);
+                      setSubtitleCharLimit(newLimit);
+                      sendMutation.mutate(buildRemotionProps({ subtitleCharLimit: newLimit }));
+                    }}
+                    className="flex-1 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                    style={{
+                      background: `linear-gradient(to right, rgba(251,191,36,0.5) 0%, rgba(251,191,36,0.5) ${((subtitleCharLimit - 20) / 60) * 100}%, rgba(255,255,255,0.2) ${((subtitleCharLimit - 20) / 60) * 100}%, rgba(255,255,255,0.2) 100%)`
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const newLimit = Math.min(80, subtitleCharLimit + 5);
+                      setSubtitleCharLimit(newLimit);
+                      sendMutation.mutate(buildRemotionProps({ subtitleCharLimit: newLimit }));
+                    }}
+                    className="px-2 py-1 text-xs border border-white/20 rounded-lg hover:bg-white/10"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-white/60">히브리어 자막 글자수</span>
+                  <span className="text-amber-300">{hebrewCharLimit}자</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const newLimit = Math.max(20, hebrewCharLimit - 5);
+                      setHebrewCharLimit(newLimit);
+                      sendMutation.mutate(buildRemotionProps({ hebrewCharLimit: newLimit }));
+                    }}
+                    className="px-2 py-1 text-xs border border-white/20 rounded-lg hover:bg-white/10"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="range"
+                    min="20"
+                    max="80"
+                    value={hebrewCharLimit}
+                    onChange={(e) => {
+                      const newLimit = Number(e.target.value);
+                      setHebrewCharLimit(newLimit);
+                      sendMutation.mutate(buildRemotionProps({ hebrewCharLimit: newLimit }));
+                    }}
+                    className="flex-1 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                    style={{
+                      background: `linear-gradient(to right, rgba(251,191,36,0.5) 0%, rgba(251,191,36,0.5) ${((hebrewCharLimit - 20) / 60) * 100}%, rgba(255,255,255,0.2) ${((hebrewCharLimit - 20) / 60) * 100}%, rgba(255,255,255,0.2) 100%)`
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const newLimit = Math.min(80, hebrewCharLimit + 5);
+                      setHebrewCharLimit(newLimit);
+                      sendMutation.mutate(buildRemotionProps({ hebrewCharLimit: newLimit }));
+                    }}
+                    className="px-2 py-1 text-xs border border-white/20 rounded-lg hover:bg-white/10"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              </>
             )}
           </section>
 

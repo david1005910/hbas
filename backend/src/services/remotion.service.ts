@@ -27,6 +27,8 @@ export interface RemotionProps {
   bgmFileName?: string;   // BGM 파일명 (public/ 기준)
   bgmVolume?: number;     // 0.0 ~ 1.0
   fontSizeScale?: number;  // 50-150 (percent)
+  subtitleCharLimit?: number;  // 자막 글자수 제한
+  hebrewCharLimit?: number;     // 히브리어 자막 글자수 제한
 }
 
 // ─── data.json 읽기/쓰기 ─────────────────────────────────────────────────────
@@ -57,6 +59,8 @@ export function writeProps(props: RemotionProps, durationInFrames?: number): voi
     bgmFileName,
     bgmVolume,
     fontSizeScale: props.fontSizeScale ?? 100,
+    subtitleCharLimit: props.subtitleCharLimit ?? 45,
+    hebrewCharLimit: props.hebrewCharLimit ?? 40,
   };
   if (props.episodeId) payload.episodeId = props.episodeId;
   fs.writeFileSync(dataPath, JSON.stringify(payload, null, 2), "utf-8");
@@ -83,6 +87,8 @@ function updateRootDefaultProps(props: RemotionProps, durationInFrames = 150): v
   const bmf = JSON.stringify(props.bgmFileName ?? "");
   const bmv = typeof props.bgmVolume === "number" ? props.bgmVolume : 0.15;
   const fss = typeof props.fontSizeScale === "number" ? props.fontSizeScale : 100;
+  const scl = typeof props.subtitleCharLimit === "number" ? props.subtitleCharLimit : 45;
+  const hcl = typeof props.hebrewCharLimit === "number" ? props.hebrewCharLimit : 40;
 
   const content = `import React from 'react';
 import { Composition } from 'remotion';
@@ -101,6 +107,8 @@ const defaultProps = {
   bgmFileName: ${bmf},
   bgmVolume: ${bmv},
   fontSizeScale: ${fss},
+  subtitleCharLimit: ${scl},
+  hebrewCharLimit: ${hcl},
 };
 
 export const RemotionRoot: React.FC = () => {

@@ -22,6 +22,19 @@ const DEFAULT_REPLACEMENTS: WordReplacement[] = [
   { from: "여호와 하나님", to: "엘로힘", enabled: true },
   { from: "주 하나님", to: "엘로힘", enabled: true },
   { from: "하나님", to: "엘로힘", enabled: true },
+  // 감탄형 → 평서형 변환
+  { from: "하였네", to: "하였다", enabled: true },
+  { from: "되었네", to: "되었다", enabled: true },
+  { from: "되었구나", to: "되었다", enabled: true },
+  { from: "하였구나", to: "하였다", enabled: true },
+  { from: "이었네", to: "이었다", enabled: true },
+  { from: "이었구나", to: "이었다", enabled: true },
+  { from: "있었네", to: "있었다", enabled: true },
+  { from: "있었구나", to: "있었다", enabled: true },
+  { from: "했네", to: "했다", enabled: true },
+  { from: "했구나", to: "했다", enabled: true },
+  { from: "됐네", to: "됐다", enabled: true },
+  { from: "됐구나", to: "됐다", enabled: true },
 ];
 
 export function loadReplacements(): WordReplacement[] {
@@ -56,6 +69,15 @@ export function applyWordReplacements(text: string): string {
   for (const rule of sorted) {
     result = result.split(rule.from).join(rule.to);
   }
+  
+  // 추가적인 감탄형 제거 (정규식 기반)
+  result = result.replace(/([가-힣]+)네([^\w]|$)/g, '$1다$2');
+  result = result.replace(/([가-힣]+)구나([^\w]|$)/g, '$1다$2');
+  result = result.replace(/([가-힣]+)는구나([^\w]|$)/g, '$1는다$2');
+  result = result.replace(/([가-힣]+)었네([^\w]|$)/g, '$1었다$2');
+  result = result.replace(/([가-힣]+)았네([^\w]|$)/g, '$1았다$2');
+  result = result.replace(/([가-힣]+)였네([^\w]|$)/g, '$1였다$2');
+  
   return result;
 }
 

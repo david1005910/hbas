@@ -4,6 +4,7 @@ import { generateSrtPack } from "../services/srt.service";
 import { generateYtMetaPack } from "../services/ytMeta.service";
 import { generateNarration } from "../services/tts.service";
 import { buildScriptPrompt, buildAnimPromptRequest } from "../utils/promptBuilder";
+import { getVietnameseBibleBookName } from "../utils/vietnameseBibleBooks";
 import { prisma } from "../config/database";
 import { applyWordReplacements } from "../services/wordReplacement.service";
 import { fetchVersesForRange, syncAllSubtitlesForEpisode, PROJECT_PATH } from "../services/remotion.service";
@@ -311,11 +312,12 @@ export async function generateYtMeta(req: Request, res: Response, next: NextFunc
     const episode = await getEpisodeOrFail(req.params.id, res);
     if (!episode) return;
 
+    const vietnameseBookName = getVietnameseBibleBookName(episode.bibleBook.nameEn);
     const result = await generateYtMetaPack(
       episode.titleKo,
       episode.bibleBook.nameKo,
       episode.bibleBook.nameHe,
-      "Sáng Thế Ký", // Vietnamese book name placeholder
+      vietnameseBookName,
       episode.verseRange
     );
 

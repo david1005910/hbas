@@ -11,9 +11,10 @@ import { VideoClipManager } from "../components/generator/VideoClipManager";
 import { SrtGenerator } from "../components/generator/SrtGenerator";
 import { NarrationGenerator } from "../components/generator/NarrationGenerator";
 import { YtMetaGenerator } from "../components/generator/YtMetaGenerator";
+import { ThumbnailGenerator } from "../components/generator/ThumbnailGenerator";
 import { episodesApi } from "../api/episodes";
 
-type Tab = "script" | "prompt" | "keyframes" | "video" | "narration" | "srt" | "meta";
+type Tab = "script" | "prompt" | "keyframes" | "video" | "narration" | "srt" | "meta" | "thumbnail";
 
 const TABS: { key: Tab; label: string; emoji: string }[] = [
   { key: "script", label: "스크립트", emoji: "📜" },
@@ -23,6 +24,7 @@ const TABS: { key: Tab; label: string; emoji: string }[] = [
   { key: "narration", label: "나레이션", emoji: "🎙" },
   { key: "srt", label: "자막 SRT", emoji: "💬" },
   { key: "meta", label: "YT 메타", emoji: "📊" },
+  { key: "thumbnail", label: "썸네일", emoji: "🖼️" },
 ];
 
 export function EpisodeDetail() {
@@ -30,17 +32,35 @@ export function EpisodeDetail() {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>("script");
 
-  const { data: episode, isLoading } = useQuery({
+  const { data: episode, isLoading, error } = useQuery({
     queryKey: ["episode", id],
     queryFn: () => episodesApi.get(id!),
+    enabled: !!id,
   });
 
   function refresh() {
     qc.invalidateQueries({ queryKey: ["episode", id] });
   }
 
-  if (isLoading || !episode) {
+  if (isLoading) {
     return <div className="p-8 text-parchment/50 font-body">로딩 중...</div>;
+  }
+
+  if (error || !episode) {
+    return (
+      <div className="p-8 text-center">
+        <div className="text-red-400 font-body text-lg mb-2">❌ 에피소드를 찾을 수 없습니다</div>
+        <div className="text-parchment/50 font-body text-sm mb-4">
+          요청하신 에피소드 ID가 존재하지 않거나 삭제되었습니다.
+        </div>
+        <button
+          onClick={() => window.history.back()}
+          className="px-4 py-2 bg-gold hover:bg-gold-light text-ink font-body font-semibold rounded-lg transition-colors"
+        >
+          이전 페이지로 돌아가기
+        </button>
+      </div>
+    );
   }
 
   const apiBase = import.meta.env.VITE_API_URL || "http://localhost:4000";
@@ -213,6 +233,12 @@ export function EpisodeDetail() {
           <YtMetaGenerator
             episodeId={id!}
             existing={getContent("YT_META")}
+            onDone={refresh}
+          />
+        )}
+        {activeTab === "thumbnail" && (
+          <ThumbnailGenerator
+            episodeId={id!}
             onDone={refresh}
           />
         )}

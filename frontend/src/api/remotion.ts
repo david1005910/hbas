@@ -26,6 +26,8 @@ export interface RemotionProps {
   showSubtitle?: boolean;
   showNarration?: boolean;
   fontSizeScale?: number;
+  subtitleCharLimit?: number;  // 자막 글자수 제한
+  hebrewCharLimit?: number;     // 히브리어 자막 글자수 제한
 }
 
 export interface RenderStatus {

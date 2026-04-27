@@ -1,5 +1,65 @@
 [
   {
+    "from": "하였네",
+    "to": "하였다",
+    "enabled": true
+  },
+  {
+    "from": "되었네",
+    "to": "되었다",
+    "enabled": true
+  },
+  {
+    "from": "되었구나",
+    "to": "되었다",
+    "enabled": true
+  },
+  {
+    "from": "하였구나",
+    "to": "하였다",
+    "enabled": true
+  },
+  {
+    "from": "이었네",
+    "to": "이었다",
+    "enabled": true
+  },
+  {
+    "from": "이었구나",
+    "to": "이었다",
+    "enabled": true
+  },
+  {
+    "from": "있었네",
+    "to": "있었다",
+    "enabled": true
+  },
+  {
+    "from": "있었구나",
+    "to": "있었다",
+    "enabled": true
+  },
+  {
+    "from": "했네",
+    "to": "했다",
+    "enabled": true
+  },
+  {
+    "from": "했구나",
+    "to": "했다",
+    "enabled": true
+  },
+  {
+    "from": "됐네",
+    "to": "됐다",
+    "enabled": true
+  },
+  {
+    "from": "됐구나",
+    "to": "됐다",
+    "enabled": true
+  },
+  {
     "from": "여호와 하나님",
     "to": "엘로힘",
     "enabled": true
@@ -16,12 +76,12 @@
   },
   {
     "from": "Lord",
-    "to": "ellohim",
+    "to": "elohim",
     "enabled": true
   },
   {
     "from": "My Lord",
-    "to": "Ellohim",
+    "to": "Elohim",
     "enabled": true
   },
   {
@@ -42,6 +102,16 @@
   {
     "from": "임엘로힘",
     "to": "임신",
+    "enabled": true
+  },
+  {
+    "from": "엘로힘(Elohim)",
+    "to": "Elohim",
+    "enabled": true
+  },
+  {
+    "from": "Elohim Yahweh ",
+    "to": "Elohim",
     "enabled": true
   }
 ]

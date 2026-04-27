@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { generateApi } from "../../api/generate";
 import { DownloadButton } from "../ui/DownloadButton";
 import type { GeneratedContent } from "../../types";
@@ -14,6 +14,12 @@ export function YtMetaGenerator({ episodeId, existing, onDone }: Props) {
   const [error, setError] = useState("");
   const [content, setContent] = useState(existing?.content ?? "");
   const [generatedContentId, setGeneratedContentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (existing?.content) {
+      setContent(existing.content);
+    }
+  }, [existing?.content]);
 
   async function handleGenerate() {
     setIsLoading(true);
@@ -34,7 +40,35 @@ export function YtMetaGenerator({ episodeId, existing, onDone }: Props) {
   const downloadContentId = generatedContentId ?? existing?.id ?? null;
 
   let parsed: any = null;
-  try { parsed = content ? JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] || "") : null; } catch {}
+  if (content && content.trim()) {
+    try {
+      // Try to parse as JSON directly first
+      parsed = JSON.parse(content);
+    } catch {
+      // If direct parsing fails, try to fix common issues
+      try {
+        let fixedContent = content;
+        
+        // Extract JSON if wrapped in other text
+        const jsonMatch = fixedContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          fixedContent = jsonMatch[0];
+        }
+        
+        // Fix unescaped quotes in Hebrew text (common biblical references)
+        fixedContent = fixedContent.replace(/כ"ג/g, 'כ\\"ג');
+        fixedContent = fixedContent.replace(/ב"ש/g, 'ב\\"ש');
+        fixedContent = fixedContent.replace(/ב'/g, 'ב\\\'');
+        fixedContent = fixedContent.replace(/ג'/g, 'ג\\\'');
+        fixedContent = fixedContent.replace(/ד'/g, 'ד\\\'');
+        
+        parsed = JSON.parse(fixedContent);
+        
+      } catch (parseError) {
+        // Parsing failed completely, will show raw content with warning
+      }
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -56,6 +90,23 @@ export function YtMetaGenerator({ episodeId, existing, onDone }: Props) {
       </div>
 
       {error && <p className="text-red-400 text-sm font-body">{error}</p>}
+
+      {/* 디버깅: raw 콘텐츠 표시 */}
+      {content && !parsed && (
+        <div className="border border-yellow-500/20 rounded-lg p-3 bg-yellow-500/5">
+          <p className="text-yellow-400 text-xs font-body mb-2">⚠️ JSON 파싱 실패 - Raw 데이터:</p>
+          <pre className="text-xs text-parchment/70 font-mono whitespace-pre-wrap overflow-auto max-h-32">{content}</pre>
+        </div>
+      )}
+
+      {!content && !isLoading && (
+        <div className="border border-gold/20 rounded-xl p-8 text-center bg-ink-light">
+          <div className="text-parchment/50 text-sm font-body mb-2">📊 아직 메타데이터가 생성되지 않았습니다</div>
+          <div className="text-parchment/30 text-xs font-body">
+            "메타데이터 생성" 버튼을 클릭하여 유튜브 제목, 설명, 태그를 생성하세요
+          </div>
+        </div>
+      )}
 
       {parsed && (
         <div className="grid grid-cols-3 gap-3">

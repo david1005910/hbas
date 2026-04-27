@@ -1,9 +1,12 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Wand2, Pencil, Save, X, CheckCircle2, ArrowRight } from "lucide-react";
 import { streamGenerate } from "../../api/generate";
 import { StreamingOutput } from "../ui/StreamingOutput";
 import { DownloadButton } from "../ui/DownloadButton";
 import { api } from "../../api/client";
+import { characterApi } from "../../api/character";
+import { CharacterImageUpload } from "../character/CharacterImageUpload";
 import type { GeneratedContent } from "../../types";
 
 interface Props {
@@ -18,6 +21,12 @@ type Mode = "view" | "edit";
 export function AnimPromptGenerator({ episodeId, existing, onDone, onNextStep }: Props) {
   const [content, setContent] = useState(existing?.content ?? "");
   const [editContent, setEditContent] = useState("");
+  
+  // 캐릭터 이미지 조회
+  const { data: characterData, refetch: refetchCharacters } = useQuery({
+    queryKey: ['characterImages', episodeId],
+    queryFn: () => characterApi.getCharacterImages(episodeId),
+  });
   const [mode, setMode] = useState<Mode>("view");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -152,6 +161,13 @@ export function AnimPromptGenerator({ episodeId, existing, onDone, onNextStep }:
       {/* 에러 */}
       {streamError && <p className="text-red-400 text-sm font-body">{streamError}</p>}
       {saveError && <p className="text-red-400 text-sm font-body">{saveError}</p>}
+
+      {/* 캐릭터 이미지 업로드 섹션 */}
+      <CharacterImageUpload
+        episodeId={episodeId}
+        images={characterData?.images || []}
+        onImageUpdate={refetchCharacters}
+      />
 
       {/* 콘텐츠 영역 */}
       {mode === "view" ? (

@@ -18,6 +18,33 @@ import { buildSceneSrt, parseSrt } from "../utils/srtParser";
 import { prisma } from "../config/database";
 import { GCS_OUTPUT_BUCKET, TARGET_SCENE_DURATION } from "../config/vertexai";
 
+async function getCharacterImagesAsBase64(episodeId: string): Promise<string[]> {
+  const CHARACTER_STORAGE = process.env.CHARACTER_STORAGE_PATH || "/app/storage/characters";
+  
+  // 캐릭터 이미지 정보 가져오기
+  const characterImages = await prisma.characterImage.findMany({
+    where: { episodeId },
+    orderBy: { orderIndex: 'asc' }
+  });
+  
+  const base64Images: string[] = [];
+  
+  for (const charImg of characterImages) {
+    try {
+      const imagePath = path.join(CHARACTER_STORAGE, episodeId, path.basename(charImg.imageUrl));
+      if (fs.existsSync(imagePath)) {
+        const imageBuffer = fs.readFileSync(imagePath);
+        const base64 = imageBuffer.toString('base64');
+        base64Images.push(base64);
+      }
+    } catch (err) {
+      console.warn(`[Video] 캐릭터 이미지 로드 실패: ${charImg.imageUrl}`, err);
+    }
+  }
+  
+  return base64Images;
+}
+
 export async function startVideoGeneration(req: Request, res: Response, next: NextFunction) {
   try {
     // Veo 비용 승인 게이트
@@ -51,8 +78,14 @@ export async function startVideoGeneration(req: Request, res: Response, next: Ne
 
     const imageBuffer = fs.readFileSync(`/app${keyframe.imageUrl}`);
 
+    // 캐릭터 이미지 가져오기 (일관성 유지용)
+    const characterImages = await getCharacterImagesAsBase64(keyframe.episodeId);
+    if (characterImages.length > 0) {
+      console.log(`[Veo] 캐릭터 이미지 ${characterImages.length}개 포함하여 일관성 유지`);
+    }
+
     console.log(`[Veo] start, episodeId=${keyframe.episodeId}, scene=${keyframe.sceneNumber}, model=${process.env.VEO_MODEL}`);
-    const veoJobId = await veoStart(imageBuffer, motionPrompt || "Slow cinematic pan, gentle ambient motion", durationSec);
+    const veoJobId = await veoStart(imageBuffer, motionPrompt || "Slow cinematic pan, gentle ambient motion", durationSec, characterImages);
 
     const clip = await prisma.sceneVideoClip.create({
       data: {

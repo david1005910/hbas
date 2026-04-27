@@ -70,6 +70,7 @@ model Episode {
   contents       GeneratedContent[]
   keyframes      SceneKeyframe[]
   videoClips     SceneVideoClip[]
+  characterImages CharacterImage[]
 
   @@map("episodes")
 }
@@ -145,4 +146,18 @@ enum VideoClipStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+// 캐릭터 이미지 (일관성 유지용)
+model CharacterImage {
+  id          String   @id @default(uuid())
+  episodeId   String
+  episode     Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  name        String   @db.VarChar(100)    // 캐릭터 이름
+  description String?  @db.VarChar(500)    // 캐릭터 설명
+  imageUrl    String   @db.VarChar(500)    // 저장된 이미지 URL
+  orderIndex  Int      @default(0)         // 표시 순서
+  createdAt   DateTime @default(now())
+
+  @@map("character_images")
 }

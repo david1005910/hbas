@@ -4,6 +4,22 @@ import * as path from "path";
 import archiver from "archiver";
 import { prisma } from "../config/database";
 
+export async function getContent(req: Request, res: Response, next: NextFunction) {
+  try {
+    const content = await prisma.generatedContent.findUnique({ where: { id: req.params.id } });
+    if (!content) return res.status(404).json({ error: "Not found" });
+    res.json({
+      id: content.id,
+      contentType: content.contentType,
+      content: content.content,
+      aiModel: content.aiModel,
+      createdAt: content.createdAt
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function updateContent(req: Request, res: Response, next: NextFunction) {
   try {
     const { content } = req.body;

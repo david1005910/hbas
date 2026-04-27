@@ -7,8 +7,9 @@ const NANO_BANANA_MODEL = process.env.NANO_BANANA_MODEL || "gemini-2.5-flash-ima
 const CACHE_TTL = parseInt(process.env.CACHE_TTL_SECONDS || "86400", 10);
 const RETRY_DELAYS_MS = [5000, 15000, 30000]; // 429 시 대기 시간
 
-function promptHash(prompt: string): string {
-  return "nb:" + crypto.createHash("sha256").update(prompt).digest("hex").slice(0, 16);
+function promptHash(prompt: string, referenceImages?: string[]): string {
+  const hashInput = prompt + (referenceImages ? referenceImages.join('|') : '');
+  return "nb:" + crypto.createHash("sha256").update(hashInput).digest("hex").slice(0, 16);
 }
 
 async function sleep(ms: number) {
@@ -19,14 +20,15 @@ export async function generateKeyframe(
   prompt: string,
   aspectRatio: "16:9" | "9:16" = "16:9",
   episodeId?: string,
-  sceneNumber?: number
+  sceneNumber?: number,
+  referenceImages?: string[] // base64 encoded images for character consistency
 ): Promise<Buffer> {
   const enhancedPrompt = `${prompt} Aspect ratio: ${
     aspectRatio === "16:9" ? "landscape widescreen 16:9" : "portrait vertical 9:16"
   }.`;
 
   // ── AI 비용 가드: Redis 캐시 확인 ─────────────────────────────
-  const cacheKey = promptHash(enhancedPrompt);
+  const cacheKey = promptHash(enhancedPrompt, referenceImages);
   try {
     const cached = await redis.get(cacheKey);
     if (cached) {
@@ -46,8 +48,23 @@ export async function generateKeyframe(
 
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     try {
+      // 콘텐츠 구성: 텍스트 프롬프트 + 참조 이미지들
+      const parts: any[] = [{ text: enhancedPrompt }];
+      
+      // 참조 이미지 추가 (최대 3개)
+      if (referenceImages && referenceImages.length > 0) {
+        for (const refImage of referenceImages.slice(0, 3)) {
+          parts.push({
+            inlineData: {
+              mimeType: "image/png", // 또는 적절한 MIME 타입
+              data: refImage
+            }
+          });
+        }
+      }
+
       const result = await (model as any).generateContent({
-        contents: [{ role: "user", parts: [{ text: enhancedPrompt }] }],
+        contents: [{ role: "user", parts }],
         generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
       });
 
@@ -57,8 +74,8 @@ export async function generateKeyframe(
         throw new Error(`이미지 생성 차단됨 (blockReason=${reason})`);
       }
 
-      const parts = candidates[0]?.content?.parts ?? [];
-      const inlinePart = parts.find((p: any) => p.inlineData?.mimeType?.startsWith("image/"));
+      const responseParts = candidates[0]?.content?.parts ?? [];
+      const inlinePart = responseParts.find((p: any) => p.inlineData?.mimeType?.startsWith("image/"));
 
       if (inlinePart?.inlineData?.data) {
         const imageBuffer = Buffer.from(inlinePart.inlineData.data, "base64");
@@ -74,7 +91,7 @@ export async function generateKeyframe(
         return imageBuffer;
       }
 
-      const textPart = parts.find((p: any) => p.text);
+      const textPart = responseParts.find((p: any) => p.text);
       throw new Error(
         `이미지 데이터 없음. 응답: ${textPart?.text?.slice(0, 200) ?? "없음"}`
       );

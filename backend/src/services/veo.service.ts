@@ -12,7 +12,8 @@ const BASE_URL = `https://${GCP_LOCATION}-aiplatform.googleapis.com/v1`;
 export async function startVideoGeneration(
   imageBuffer: Buffer,
   motionPrompt: string,
-  durationSec: 5 | 6 | 7 | 8 = 8
+  durationSec: 5 | 6 | 7 | 8 = 8,
+  characterImages?: string[] // base64 encoded character images for consistency
 ): Promise<string> {
   const token = await getGcpAccessToken();
   const url = `${BASE_URL}/projects/${GCP_PROJECT}/locations/${GCP_LOCATION}/publishers/google/models/${VEO_MODEL}:predictLongRunning`;
@@ -29,15 +30,29 @@ export async function startVideoGeneration(
     parameters.storageUri = GCS_OUTPUT_BUCKET;
   }
 
+  // 요청 인스턴스 구성
+  const instance: any = {
+    image: { bytesBase64Encoded: imageBuffer.toString("base64"), mimeType: "image/png" },
+    prompt: motionPrompt,
+  };
+
+  // 캐릭터 이미지 추가 (최대 3개)
+  if (characterImages && characterImages.length > 0) {
+    instance.referenceImages = {
+      subjectImages: characterImages.slice(0, 3).map(base64 => ({
+        bytesBase64Encoded: base64,
+        mimeType: "image/png"
+      }))
+    };
+    console.log(`[Veo] 캐릭터 이미지 ${characterImages.length}개 포함하여 일관성 유지`);
+  }
+
   let response;
   try {
     response = await axios.post(
       url,
       {
-        instances: [{
-          image: { bytesBase64Encoded: imageBuffer.toString("base64"), mimeType: "image/png" },
-          prompt: motionPrompt,
-        }],
+        instances: [instance],
         parameters,
       },
       { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }

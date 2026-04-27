@@ -3,9 +3,38 @@ import { generateKeyframe } from "../services/nanoBanana.service";
 import { saveKeyframe, getKeyframeWebPath } from "../utils/imageStorage";
 import { buildNanoBananaPrompt, parseAnimPromptByScene } from "../utils/promptBuilder";
 import { prisma } from "../config/database";
+import * as fs from "fs";
+import * as path from "path";
 
 function sseWrite(res: Response, data: object) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+async function getCharacterImagesAsBase64(episodeId: string): Promise<string[]> {
+  const CHARACTER_STORAGE = process.env.CHARACTER_STORAGE_PATH || "/app/storage/characters";
+  
+  // 캐릭터 이미지 정보 가져오기
+  const characterImages = await prisma.characterImage.findMany({
+    where: { episodeId },
+    orderBy: { orderIndex: 'asc' }
+  });
+  
+  const base64Images: string[] = [];
+  
+  for (const charImg of characterImages) {
+    try {
+      const imagePath = path.join(CHARACTER_STORAGE, episodeId, path.basename(charImg.imageUrl));
+      if (fs.existsSync(imagePath)) {
+        const imageBuffer = fs.readFileSync(imagePath);
+        const base64 = imageBuffer.toString('base64');
+        base64Images.push(base64);
+      }
+    } catch (err) {
+      console.warn(`[Keyframe] 캐릭터 이미지 로드 실패: ${charImg.imageUrl}`, err);
+    }
+  }
+  
+  return base64Images;
 }
 
 export async function generateEpisodeKeyframes(req: Request, res: Response, next: NextFunction) {
@@ -37,6 +66,12 @@ export async function generateEpisodeKeyframes(req: Request, res: Response, next
       console.warn(`[Keyframe] ANIM_PROMPT 없음 또는 파싱 실패 — fallback 프롬프트 사용`);
     }
 
+    // 캐릭터 이미지 가져오기 (참조용)
+    const characterImages = await getCharacterImagesAsBase64(episode.id);
+    if (characterImages.length > 0) {
+      console.log(`[Keyframe] 캐릭터 이미지 ${characterImages.length}개 로드됨 (일관성 유지용)`);
+    }
+
     for (let i = 1; i <= episode.sceneCount; i++) {
       if (i > 1) await new Promise((r) => setTimeout(r, 3000));
       sseWrite(res, { scene: i, status: "generating" });
@@ -53,7 +88,7 @@ export async function generateEpisodeKeyframes(req: Request, res: Response, next
         const promptSource = sceneImagePrompt ? "ANIM_PROMPT" : "fallback";
         console.log(`[Keyframe] 씬 ${i} 생성 (${promptSource}), episodeId=${episode.id}`);
 
-        const imageBuffer = await generateKeyframe(prompt, "16:9", episode.id, i);
+        const imageBuffer = await generateKeyframe(prompt, "16:9", episode.id, i, characterImages);
         const filePath = saveKeyframe(episode.id, i, imageBuffer);
 
         await prisma.sceneKeyframe.create({

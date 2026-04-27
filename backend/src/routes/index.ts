@@ -11,6 +11,8 @@ import bibleRouter from "./bible.route";
 import bgmRouter from "./bgm.route";
 import remotionRouter from "./remotion.route";
 import ragRouter from "./rag.route";
+import characterRouter from "./character.route";
+import thumbnailRouter from "./thumbnail.route";
 
 const router = Router();
 
@@ -26,6 +28,8 @@ router.use("/bible", bibleRouter);
 router.use("/episodes", bgmRouter);   // /episodes/:id/bgm
 router.use("/remotion", remotionRouter); // /remotion/props, /remotion/render, /remotion/download
 router.use("/rag", ragRouter);          // /rag/search, /rag/ingest, /rag/ingest-file, /rag/status
+router.use("/", characterRouter);      // /episodes/:episodeId/characters, /characters/:imageId
+router.use("/episodes", thumbnailRouter); // /episodes/:id/generate/thumbnail, /episodes/:id/thumbnails
 
 router.get("/health", (_req, res) => res.json({ status: "ok" }));
 
