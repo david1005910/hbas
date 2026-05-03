@@ -13,6 +13,7 @@ import remotionRouter from "./remotion.route";
 import ragRouter from "./rag.route";
 import characterRouter from "./character.route";
 import thumbnailRouter from "./thumbnail.route";
+import youtubeRouter from "./youtube.route";
 
 const router = Router();
 
@@ -30,6 +31,7 @@ router.use("/remotion", remotionRouter); // /remotion/props, /remotion/render, /
 router.use("/rag", ragRouter);          // /rag/search, /rag/ingest, /rag/ingest-file, /rag/status
 router.use("/", characterRouter);      // /episodes/:episodeId/characters, /characters/:imageId
 router.use("/episodes", thumbnailRouter); // /episodes/:id/generate/thumbnail, /episodes/:id/thumbnails
+router.use("/youtube", youtubeRouter);   // /youtube/skills, /youtube/analyze
 
 router.get("/health", (_req, res) => res.json({ status: "ok" }));
 

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { BookOpen, FolderOpen, LayoutDashboard, Video } from "lucide-react";
+import { BookOpen, FolderOpen, LayoutDashboard, Video, Youtube } from "lucide-react";
 
 function MenorahIcon({ size = 24, color = "currentColor" }: { size?: number; color?: string }) {
   return (
@@ -30,6 +30,7 @@ const NAV = [
   { to: "/projects", icon: FolderOpen, label: "프로젝트" },
   { to: "/bible", icon: BookOpen, label: "성경 목록" },
   { to: "/video-studio", icon: Video, label: "비디오 스튜디오" },
+  { to: "/youtube-studio", icon: Youtube, label: "YouTube 스튜디오" },
 ];
 
 export function Sidebar() {
