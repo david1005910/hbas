@@ -6,7 +6,7 @@ interface Props {
   onSkillSelect: (skill: YouTubeSkill) => void;
 }
 
-const SKILL_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+const SKILL_ICONS: Record<string, any> = {
   audit: Wrench,
   seo: Search,
   script: Video,

@@ -9,12 +9,17 @@ datasource db {
 }
 
 model Project {
-  id          String    @id @default(uuid())
-  name        String    @db.VarChar(200)
-  description String?   @db.Text
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  episodes    Episode[]
+  id             String    @id @default(uuid())
+  name           String    @db.VarChar(200)
+  description    String?   @db.Text
+  type           String    @default("bible") @db.VarChar(20) // "bible" or "youtube"
+  // YouTube 프로젝트 전용 필드들
+  niche          String?   @db.VarChar(200)
+  targetAudience String?   @db.VarChar(200)
+  contentType    String?   @db.VarChar(50) // educational, entertainment, tutorial, review, vlog
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  episodes       Episode[]
 
   @@map("projects")
 }

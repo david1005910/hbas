@@ -13,8 +13,17 @@ export async function listProjects(_req: Request, res: Response, next: NextFunct
 
 export async function createProject(req: Request, res: Response, next: NextFunction) {
   try {
-    const { name, description } = req.body;
-    const project = await prisma.project.create({ data: { name, description } });
+    const { name, description, type, niche, targetAudience, contentType } = req.body;
+    const project = await prisma.project.create({ 
+      data: { 
+        name, 
+        description,
+        type: type || "bible", // 기본값은 "bible"
+        niche,
+        targetAudience,
+        contentType
+      } 
+    });
     res.status(201).json(project);
   } catch (err) { next(err); }
 }

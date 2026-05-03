@@ -450,7 +450,7 @@ function AnalysisResult({ skill, channelInfo, onBack, onStartChat }: AnalysisRes
 
           <div>
             <h4 className="text-parchment font-body font-semibold mb-2">맞춤 조언</h4>
-            <div className="bg-ink-dark p-4 rounded-lg text-sm font-body text-parchment/70">
+            <div className="bg-ink-dark p-4 rounded-lg text-sm font-body text-parchment">
               <p className="mb-2">
                 <strong>{channelInfo.niche}</strong> 니치에서 <strong>{getGoalLabel(channelInfo.goal)}</strong>를 목표로 하는 
                 <strong> {getSizeLabel(channelInfo.size)}</strong> 채널을 위한 {skill.name} 전략:

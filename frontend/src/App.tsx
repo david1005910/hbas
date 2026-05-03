@@ -10,6 +10,7 @@ import { VideoStudio } from "./pages/VideoStudio";
 import { YouTubeStudio } from "./pages/YouTubeStudio";
 import { YouTubeStudioTest } from "./pages/YouTubeStudioTest";
 import { YouTubeStudioSimple } from "./pages/YouTubeStudioSimple";
+import { YouTubeProjectNew } from "./pages/YouTubeProjectNew";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } },
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="/bible" element={<BibleBooks />} />
             <Route path="/video-studio" element={<VideoStudio />} />
             <Route path="/youtube-studio" element={<YouTubeStudioSimple />} />
+            <Route path="/youtube/projects/new" element={<YouTubeProjectNew />} />
           </Routes>
         </div>
       </BrowserRouter>

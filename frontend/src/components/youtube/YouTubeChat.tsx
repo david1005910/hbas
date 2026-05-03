@@ -159,9 +159,6 @@ ${context.url ? `- URL: ${context.url}` : ""}
             </p>
           </div>
         </div>
-        <div className="text-sm text-parchment/50 font-body">
-          {selectedSkill.command}
-        </div>
       </div>
 
       {/* 메시지 영역 */}

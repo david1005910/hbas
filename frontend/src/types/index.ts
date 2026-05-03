@@ -1,10 +1,17 @@
+export type ProjectType = "bible" | "youtube";
+
 export interface Project {
   id: string;
   name: string;
   description?: string;
+  type?: ProjectType; // 기본값은 "bible" (기존 프로젝트와의 호환성)
   createdAt: string;
   updatedAt: string;
   _count?: { episodes: number };
+  // YouTube 프로젝트 전용 필드
+  niche?: string;
+  targetAudience?: string;
+  contentType?: "educational" | "entertainment" | "tutorial" | "review" | "vlog";
 }
 
 export interface BibleBook {

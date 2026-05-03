@@ -7,6 +7,14 @@ interface ChannelContext {
   url?: string;
 }
 
+interface YouTubeProjectContext {
+  title: string;
+  description: string;
+  niche: string;
+  targetAudience: string;
+  contentType: "educational" | "entertainment" | "tutorial" | "review" | "vlog";
+}
+
 export async function generateYouTubeAnalysis(
   skillId: string,
   query: string,
@@ -623,4 +631,358 @@ function getSkillName(skillId: string): string {
   };
   
   return skillNames[skillId] || "YouTube 분석";
+}
+
+// YouTube 프로젝트 기능들
+export async function generateYouTubeContentIdeas(
+  projectContext: YouTubeProjectContext,
+  topic: string
+): Promise<string> {
+  const prompt = `
+YouTube 콘텐츠 기획 전문가로서 다음 프로젝트에 대한 아이디어를 제안해주세요.
+
+프로젝트 정보:
+- 제목: ${projectContext.title}
+- 설명: ${projectContext.description}
+- 분야: ${projectContext.niche}
+- 타겟: ${projectContext.targetAudience}
+- 유형: ${getContentTypeLabel(projectContext.contentType)}
+
+요청 주제: "${topic}"
+
+다음 형식으로 종합적인 콘텐츠 기획을 제안해주세요:
+
+## 🎯 주제 분석 및 트렌드 연구
+
+### 📊 시장 분석
+- "${topic}" 관련 현재 트렌드 및 관심도
+- ${projectContext.niche} 분야에서의 검색량 및 경쟁도
+- 타겟 오디언스(${projectContext.targetAudience})의 관심사 연관성
+
+### 🔍 키워드 리서치
+- 메인 키워드: "${topic}" 관련 핵심 키워드 5개
+- 롱테일 키워드: 검색 의도 기반 키워드 8개  
+- SEO 최적화 키워드: 경쟁도 낮은 기회 키워드 5개
+
+## 🎬 영상 콘텐츠 제안
+
+### 📝 메인 영상 (15-20분 롱폼)
+**제목**: [클릭률 높은 제목 3가지 옵션]
+**설명**: 영상의 핵심 가치 제안 및 시청자 혜택
+**타겟팅**: ${projectContext.targetAudience}를 위한 맞춤 각도
+
+### 🗂️ 영상 구조 (${getContentTypeLabel(projectContext.contentType)} 최적화)
+1. **인트로 (0-30초)**
+   - 강력한 훅: 시청자의 즉각적인 관심 끌기
+   - 문제/호기심 제기
+   - 영상 미리보기 (예고편 스타일)
+
+2. **문제 설정/배경 (30초-2분)**
+   - "${topic}"가 중요한 이유
+   - 시청자가 겪는 문제 공감대 형성
+   - 영상을 끝까지 봐야 하는 이유
+
+3. **메인 콘텐츠 (2-15분)**
+   - 핵심 정보 3-5가지 세그먼트로 구분
+   - 각 섹션별 시각적 요소/예시 포함
+   - 실용적이고 즉시 적용 가능한 팁
+
+4. **마무리 및 CTA (15-20분)**
+   - 핵심 내용 요약 (3가지 포인트)
+   - 구독/좋아요/알림설정 유도
+   - 다음 영상 예고 및 연관 콘텐츠 추천
+
+### 🎨 썸네일 컨셉
+- **메인 비주얼**: "${topic}" 관련 임팩트 있는 이미지
+- **텍스트 오버레이**: 궁금증 유발 문구 (최대 6단어)
+- **색상 스킴**: ${projectContext.niche} 분야에 적합한 브랜드 컬러
+- **표정/감정**: 타겟 오디언스 반응 유도하는 표현
+
+### 📱 숏폼 파생 콘텐츠 (3-5개)
+- 메인 영상의 핵심 포인트별 60초 숏츠
+- "이것만 기억하세요" 스타일 요약본
+- Q&A 형식의 빠른 팁
+- 비하인드/메이킹 영상
+
+## 🎯 SEO 및 최적화 전략
+
+### 📋 메타데이터 최적화
+**제목**: [60자 이내, 키워드 포함 3가지 옵션]
+**설명**: 첫 125자에 핵심 키워드 포함한 매력적인 요약
+**태그**: 관련성 높은 태그 20개 (메인/롱테일/브랜딩 태그 조합)
+
+### 🔗 연관 콘텐츠 시리즈화 기회
+- "${topic}" 심화편 (Part 2, 3 등)
+- 관련 주제로 확장 가능한 시리즈 아이디어 5개
+- 플레이리스트 구성 전략
+
+### 📈 성과 예측 및 목표 설정
+- 예상 조회수 범위 (첫 1주/1개월)
+- 주요 성과 지표 (CTR, 평균 시청률, 구독 전환률)
+- A/B 테스트 요소 (썸네일, 제목, 인트로 등)
+
+실무적이고 구체적인 조언으로 도움을 드리겠습니다!
+`;
+
+  console.log(`[YouTube Project] 콘텐츠 아이디어 생성 시작: ${topic}`);
+  
+  const ideas = await generateOnce(prompt);
+  
+  console.log(`[YouTube Project] 콘텐츠 아이디어 생성 완료`);
+  
+  return ideas;
+}
+
+export async function generateYouTubeLongFormScript(
+  projectContext: YouTubeProjectContext,
+  topic: string,
+  duration: number = 15 // 분 단위
+): Promise<string> {
+  const prompt = `
+YouTube 롱폼 스크립트 전문 작가로서 다음 프로젝트의 영상 대본을 작성해주세요.
+
+프로젝트 정보:
+- 제목: ${projectContext.title}
+- 분야: ${projectContext.niche}
+- 타겟: ${projectContext.targetAudience}
+- 유형: ${getContentTypeLabel(projectContext.contentType)}
+- 영상 길이: 약 ${duration}분
+
+영상 주제: "${topic}"
+
+다음 형식으로 완성된 YouTube 롱폼 스크립트를 작성해주세요:
+
+## 🎬 YouTube 롱폼 스크립트: "${topic}"
+
+### 📊 영상 개요
+**예상 길이**: ${duration}분
+**타겟 오디언스**: ${projectContext.targetAudience}
+**핵심 메시지**: [이 영상에서 전달하고자 하는 한 가지 핵심 메시지]
+
+---
+
+### 🎭 인트로 (0:00 - 0:30)
+
+**[화면]**: [썸네일과 연결되는 첫 화면 설명]
+
+**[대사]**:
+"안녕하세요! [채널명]입니다. 
+혹시 [타겟 오디언스가 겪는 구체적인 문제]로 고민하고 계신가요? 
+오늘은 [핵심 혜택/해결책]에 대해 자세히 알아보겠습니다.
+
+[미리보기 멘트: 영상의 하이라이트 3가지]
+
+그럼 바로 시작해볼까요?"
+
+**[화면 전환]**: [로고/브랜딩 화면 2-3초]
+
+---
+
+### 🔍 문제 설정 및 배경 (0:30 - 2:00)
+
+**[화면]**: [문제 상황을 보여주는 비주얼]
+
+**[대사]**:
+"먼저 많은 분들이 [구체적인 문제 상황] 때문에 어려움을 겪고 있습니다.
+
+[통계나 사례 1-2개 제시]
+
+실제로 [구체적인 예시나 경험담]
+
+그렇다면 이 문제를 어떻게 해결할 수 있을까요?"
+
+---
+
+### 📚 메인 콘텐츠 Part 1 (2:00 - 6:00)
+
+**[화면]**: [첫 번째 핵심 내용 관련 비주얼]
+
+**[대사]**:
+"첫 번째로 알아볼 것은 [첫 번째 핵심 포인트]입니다.
+
+[상세 설명 with 구체적인 예시]
+- [세부 포인트 1]
+- [세부 포인트 2] 
+- [세부 포인트 3]
+
+여기서 중요한 건 [핵심 인사이트]라는 점입니다.
+
+실제로 이렇게 해보시면...
+[실용적인 팁이나 액션 아이템]"
+
+**[화면]**: [예시나 데모 화면]
+
+---
+
+### 📊 메인 콘텐츠 Part 2 (6:00 - 10:00)
+
+**[화면]**: [두 번째 핵심 내용 관련 비주얼]
+
+**[대사]**:
+"두 번째로 중요한 건 [두 번째 핵심 포인트]입니다.
+
+많은 분들이 [흔한 실수나 오해]라고 생각하시는데,
+사실은 [정확한 정보나 새로운 관점]입니다.
+
+[구체적인 설명과 근거]
+- [세부 설명 1]
+- [세부 설명 2]
+- [실제 적용 방법]
+
+이렇게 하면 [기대 효과나 혜택]을 얻을 수 있습니다."
+
+---
+
+### 🎯 메인 콘텐츠 Part 3 (10:00 - 13:00)
+
+**[화면]**: [세 번째 핵심 내용 관련 비주얼]
+
+**[대사]**:
+"마지막으로 [세 번째 핵심 포인트]에 대해 말씀드릴게요.
+
+이 부분이 정말 중요한데요,
+[왜 중요한지 이유와 배경 설명]
+
+[단계별 설명]
+1. [첫 번째 단계]
+2. [두 번째 단계] 
+3. [세 번째 단계]
+
+주의할 점은 [주의사항이나 팁]입니다."
+
+---
+
+### 💡 실용적 팁 및 추가 조언 (13:00 - 14:30)
+
+**[화면]**: [정리 화면 또는 체크리스트]
+
+**[대사]**:
+"그럼 정리해서 오늘 배운 내용을 실제로 적용하는 방법을 알려드릴게요.
+
+[실행 가능한 액션 플랜]
+- [즉시 실행 가능한 팁 1]
+- [중장기적으로 할 수 있는 것]
+- [추가로 알아보면 좋은 것]
+
+특히 [타겟 오디언스 특성]분들께는 [맞춤형 조언]을 추천드립니다."
+
+---
+
+### 🎬 마무리 및 CTA (14:30 - 15:00)
+
+**[화면]**: [요약 화면, 구독 버튼 강조]
+
+**[대사]**:
+"오늘은 [주제]에 대해 알아봤습니다.
+
+핵심은:
+1. [핵심 포인트 1 요약]
+2. [핵심 포인트 2 요약] 
+3. [핵심 포인트 3 요약]
+
+이 영상이 도움되셨다면 좋아요와 구독 꼭 눌러주시고,
+댓글로 [구체적인 질문이나 경험] 남겨주세요!
+
+다음 영상에서는 [다음 영상 예고]에 대해 다뤄보겠습니다.
+그럼 다음에 만나요!"
+
+**[화면]**: [구독 및 다음 영상 썸네일]
+
+---
+
+### 📝 추가 제작 노트
+
+#### 🎬 촬영/편집 가이드
+- **컷 전환**: 3-4분마다 화면 전환으로 시각적 피로 방지
+- **자막**: 핵심 키워드와 숫자는 강조 자막 처리
+- **BGM**: [콘텐츠 유형]에 적합한 배경음악 (저작권 프리)
+- **그래픽**: 통계나 리스트는 그래픽으로 시각화
+
+#### 📱 숏폼 활용 포인트  
+- 0:30-2:00 문제 설정 부분 → 60초 숏츠
+- 각 메인 포인트별 → 개별 숏츠 콘텐츠
+- 마무리 요약 → "3가지만 기억하세요" 숏츠
+
+#### 🔍 SEO 최적화 요소
+- **타임스탬프**: 각 섹션별 챕터 마킹
+- **핵심 키워드**: "${topic}" 관련 키워드를 자연스럽게 반복
+- **호출어**: "댓글에 남겨주세요", "구독해주세요" 등 명확한 CTA
+
+이렇게 완성된 스크립트로 ${projectContext.targetAudience}에게 가치 있는 ${duration}분 콘텐츠를 제작하실 수 있습니다!
+`;
+
+  console.log(`[YouTube Project] 롱폼 스크립트 생성 시작: ${topic} (${duration}분)`);
+  
+  const script = await generateOnce(prompt);
+  
+  console.log(`[YouTube Project] 롱폼 스크립트 생성 완료`);
+  
+  return script;
+}
+
+export async function analyzeYouTubeTopicTrends(
+  projectContext: YouTubeProjectContext,
+  topic: string
+): Promise<string> {
+  const prompt = `
+YouTube 트렌드 분석 전문가로서 다음 주제의 트렌드를 분석해주세요.
+
+프로젝트 정보:
+- 분야: ${projectContext.niche}
+- 타겟: ${projectContext.targetAudience}
+- 콘텐츠 유형: ${getContentTypeLabel(projectContext.contentType)}
+
+분석 주제: "${topic}"
+
+다음 형식으로 상세한 트렌드 분석을 제공해주세요:
+
+## 📈 "${topic}" 트렌드 분석 리포트
+
+### 🔥 현재 트렌드 상태
+- **관심도 지수**: [1-10 스케일로 평가]
+- **검색 증가율**: [최근 3개월 대비]
+- **경쟁도**: [1-10 스케일로 평가]
+- **시장 기회**: [높음/중간/낮음과 이유]
+
+### 📊 ${projectContext.niche} 분야에서의 위치
+- 니치 내 주제 관련성 및 적합도
+- 타겟 오디언스(${projectContext.targetAudience})의 관심도
+- 기존 콘텐츠 포화도 분석
+- 차별화 가능 포인트 3가지
+
+### 🎯 추천 콘텐츠 방향성
+**높은 성과 예상 앵글 3가지:**
+1. [앵글명]: [설명 및 예상 효과]
+2. [앵글명]: [설명 및 예상 효과] 
+3. [앵글명]: [설명 및 예상 효과]
+
+**피해야 할 접근법:**
+- [포화된 앵글이나 접근법과 이유]
+
+### 🚀 최적 업로드 타이밍
+- **시기**: [언제 업로드하면 좋을지]
+- **이유**: [트렌드 곡선상 위치와 근거]
+- **지속가능성**: [트렌드 지속 예상 기간]
+
+이 분석을 바탕으로 "${topic}"에 대한 콘텐츠 제작을 진행하시기 바랍니다.
+`;
+
+  console.log(`[YouTube Project] 트렌드 분석 시작: ${topic}`);
+  
+  const analysis = await generateOnce(prompt);
+  
+  console.log(`[YouTube Project] 트렌드 분석 완료`);
+  
+  return analysis;
+}
+
+function getContentTypeLabel(type: YouTubeProjectContext["contentType"]): string {
+  switch (type) {
+    case "educational": return "교육/강의";
+    case "tutorial": return "튜토리얼/가이드";
+    case "review": return "리뷰/분석";
+    case "entertainment": return "엔터테인먼트";
+    case "vlog": return "브이로그/일상";
+    default: return type;
+  }
 }

@@ -123,3 +123,31 @@ export async function generateOnce(
   }
   return result;
 }
+
+// SSE 스트리밍을 위한 함수
+export async function generateStream(
+  userPrompt: string,
+  res: any,
+  modelName = process.env.GEMINI_MODEL || "gemini-2.5-flash"
+): Promise<void> {
+  try {
+    console.log(`[Gemini] SSE 스트리밍 시작: ${modelName}`);
+    
+    for await (const chunk of streamGenerate(userPrompt, modelName)) {
+      // SSE 형식으로 응답 전송
+      res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+    }
+    
+    // 완료 신호
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    res.end();
+    
+    console.log(`[Gemini] SSE 스트리밍 완료`);
+  } catch (error) {
+    console.error(`[Gemini] SSE 스트리밍 오류:`, error);
+    res.write(`data: ${JSON.stringify({ 
+      error: error instanceof Error ? error.message : "알 수 없는 오류" 
+    })}\n\n`);
+    res.end();
+  }
+}
